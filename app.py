@@ -158,39 +158,23 @@ def get_recent_transactions(session, limit=5):
 
 
 def get_portfolio_trend(session, months=6):
-    """
-    Get portfolio value trend over time
-    
-    Args:
-        session: Database session
-        months: Number of months to show
-        
-    Returns:
-        tuple: (dates, values) for plotting
-    """
+    """获取投资组合趋势数据"""
     try:
-        # Get all assets
         assets = session.query(Asset).all()
-        
-        # For demonstration, we'll create a trend based on current valuation
-        # In a real system, you'd have historical valuation data
-        dates = []
-        values = []
-        
-        current_date = datetime.now()
         total_current_value = sum(float(a.current_valuation or 0) for a in assets)
         
-        # Create synthetic historical data (in production, use real historical data)
+        dates = []
+        values = []
+        current_date = datetime.now()
+        
         for i in range(months):
             month_date = current_date - timedelta(days=30 * (months - i - 1))
             dates.append(month_date.strftime("%b %Y"))
-            
-            # Simple growth model (you'd use actual historical data in production)
-            growth_factor = 0.98 + (i * 0.004)  # Gradual growth
-            values.append(total_current_value * growth_factor)
+            growth_factor = 0.96 + (i * 0.008)
+            month_value = (total_current_value * growth_factor) / 1_000_000
+            values.append(month_value)
         
         return dates, values
-    
     except Exception as e:
         st.error(f"Error calculating trend: {e}")
         return [], []
@@ -274,48 +258,53 @@ def display_transactions(transactions):
 
 
 def display_portfolio_chart(dates, values):
-    """Display portfolio value trend chart"""
-    
+    """显示投资组合趋势图表（Plotly 5.x 兼容）"""
     if not dates or not values:
         st.info("No data available for chart.")
         return
     
-    # Create Plotly chart
     fig = go.Figure()
     
-    fig.add_trace(go.Bar(
+    # 添加折线图
+    fig.add_trace(go.Scatter(
         x=dates,
         y=values,
-        marker=dict(
-            color=values,
-            colorscale='Blues',
-            line=dict(color='#1e3a5f', width=1.5)
-        ),
-        text=[f'${v/1_000_000:.1f}M' for v in values],
-        textposition='outside',
-        hovertemplate='<b>%{x}</b><br>Value: $%{y:,.0f}<extra></extra>'
+        mode='lines+markers',
+        line=dict(color='#1e3a5f', width=3),
+        marker=dict(size=8, color='#2c5282', line=dict(color='white', width=2)),
+        hovertemplate='<b>%{x}</b><br>Value: $%{y:.2f}M AUD<extra></extra>'
     ))
     
+    # Plotly 5.x 兼容的布局配置
     fig.update_layout(
         title=dict(
             text='Portfolio Value Trend (Last 6 Months)',
-            font=dict(size=18, color='#1e3a5f', family='Arial')
+            font=dict(size=18, color='#1e3a5f', family='Arial'),
+            x=0.05,
+            xanchor='left'
         ),
         xaxis=dict(
-            title='Month',
-            titlefont=dict(size=14, color='#2c5282'),
-            showgrid=False
+            title=dict(text='Month', font=dict(size=14, color='#2c5282')),
+            showgrid=False,
+            showline=True,
+            linewidth=1,
+            linecolor='#e2e8f0'
         ),
         yaxis=dict(
-            title='Value (AUD)',
-            titlefont=dict(size=14, color='#2c5282'),
-            gridcolor='#e2e8f0'
+            title=dict(text='Value (Million AUD)', font=dict(size=14, color='#2c5282')),
+            showgrid=True,
+            gridcolor='#e2e8f0',
+            showline=True,
+            linewidth=1,
+            linecolor='#e2e8f0',
+            zeroline=False
         ),
         plot_bgcolor='white',
         paper_bgcolor='white',
         height=450,
-        margin=dict(t=60, b=40, l=60, r=40),
-        hovermode='x unified'
+        margin=dict(t=80, b=60, l=70, r=40),
+        hovermode='x unified',
+        showlegend=False
     )
     
     st.plotly_chart(fig, use_container_width=True)
