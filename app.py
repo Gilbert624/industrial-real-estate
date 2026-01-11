@@ -364,6 +364,77 @@ def main():
             metrics = get_portfolio_metrics(session)
             display_metrics(metrics)
         
+        # Reports Section
+        st.write("---")
+        st.subheader("📊 Generate Reports")
+        
+        # Import report generator
+        try:
+            from utils.report_generator import ReportGenerator
+            report_gen = ReportGenerator()
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write("**Portfolio Report (PDF)**")
+                st.write("Comprehensive portfolio overview including assets and projects")
+                
+                # Generate PDF report
+                if st.button("📄 Generate PDF Report", use_container_width=True, key="generate_pdf"):
+                    try:
+                        with st.spinner("Generating PDF report..."):
+                            pdf_buffer = report_gen.generate_portfolio_pdf()
+                            # BytesIO object - get bytes data
+                            st.session_state['pdf_report'] = pdf_buffer.getvalue()
+                            st.session_state['pdf_filename'] = f"portfolio_report_{datetime.now().strftime('%Y%m%d')}.pdf"
+                        st.success("✅ PDF generated successfully!")
+                    except Exception as e:
+                        st.error(f"❌ Error generating PDF: {e}")
+                        st.session_state.pop('pdf_report', None)
+                
+                # Download PDF button
+                if 'pdf_report' in st.session_state:
+                    st.download_button(
+                        label="💾 Download PDF",
+                        data=st.session_state['pdf_report'],
+                        file_name=st.session_state.get('pdf_filename', 'portfolio_report.pdf'),
+                        mime="application/pdf",
+                        use_container_width=True,
+                        key="download_pdf"
+                    )
+            
+            with col2:
+                st.write("**Financial Report (Excel)**")
+                st.write("Detailed financial data with multiple worksheets")
+                
+                # Generate Excel report
+                if st.button("📊 Generate Excel Report", use_container_width=True, key="generate_excel"):
+                    try:
+                        with st.spinner("Generating Excel report..."):
+                            excel_buffer = report_gen.generate_financial_excel()
+                            # BytesIO object - get bytes data
+                            st.session_state['excel_report'] = excel_buffer.getvalue()
+                            st.session_state['excel_filename'] = f"financial_report_{datetime.now().strftime('%Y%m%d')}.xlsx"
+                        st.success("✅ Excel generated successfully!")
+                    except Exception as e:
+                        st.error(f"❌ Error generating Excel: {e}")
+                        st.session_state.pop('excel_report', None)
+                
+                # Download Excel button
+                if 'excel_report' in st.session_state:
+                    st.download_button(
+                        label="💾 Download Excel",
+                        data=st.session_state['excel_report'],
+                        file_name=st.session_state.get('excel_filename', 'financial_report.xlsx'),
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key="download_excel"
+                    )
+        
+        except ImportError as e:
+            st.warning(f"⚠️ Report generator not available: {e}")
+            st.info("Please ensure utils/report_generator.py exists")
+        
         st.markdown("---")
         
         # Portfolio Trend Chart
