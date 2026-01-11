@@ -9,13 +9,13 @@ Database: SQLite
 
 from datetime import datetime
 from decimal import Decimal
-from typing import List, Dict
+from typing import List, Dict, Optional
 from sqlalchemy import (
     create_engine, Column, Integer, String, Float, DateTime, 
     ForeignKey, Text, Boolean, Numeric, Date, Enum, func
 )
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy.orm import relationship, sessionmaker, joinedload
 import enum
 
 # Base class for all models
@@ -664,16 +664,19 @@ class DatabaseManager:
     def get_recent_transactions(self, limit: int = 20) -> List[Transaction]:
         """
         Get recent transactions ordered by date (most recent first)
+        Uses joinedload to eager load asset relationship to avoid DetachedInstanceError
         
         Args:
             limit: Number of transactions to retrieve (default: 20)
             
         Returns:
-            List[Transaction]: List of Transaction objects, returns empty list if error occurs
+            List[Transaction]: List of Transaction objects with asset relationship loaded, returns empty list if error occurs
         """
         session = self.get_session()
         try:
-            transactions = session.query(Transaction).order_by(
+            transactions = session.query(Transaction).options(
+                joinedload(Transaction.asset)
+            ).order_by(
                 Transaction.transaction_date.desc(),
                 Transaction.id.desc()
             ).limit(limit).all()
@@ -916,6 +919,205 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error getting asset by id: {e}")
             return None
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def add_transaction(self, transaction_data: dict, session=None) -> Transaction:
+        """
+        添加新交易记录
+        
+        Args:
+            transaction_data: 包含交易字段的字典
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            Transaction: 创建的Transaction对象
+        
+        Raises:
+            Exception: 如果创建失败
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            # 处理transaction_type - 映射字符串到枚举
+            if 'transaction_type' in transaction_data and isinstance(transaction_data['transaction_type'], str):
+                type_str = transaction_data['transaction_type'].upper()
+                if type_str == 'INCOME':
+                    transaction_data['transaction_type'] = TransactionType.INCOME
+                elif type_str == 'EXPENSE':
+                    transaction_data['transaction_type'] = TransactionType.EXPENSE
+                else:
+                    # 尝试匹配枚举值
+                    for tt in TransactionType:
+                        if tt.value.upper() == type_str:
+                            transaction_data['transaction_type'] = tt
+                            break
+            
+            # 确保currency有默认值
+            if 'currency' not in transaction_data:
+                transaction_data['currency'] = 'AUD'
+            
+            # 创建Transaction对象
+            new_transaction = Transaction(**transaction_data)
+            session.add(new_transaction)
+            session.commit()
+            session.refresh(new_transaction)
+            return new_transaction
+        
+        except Exception as e:
+            session.rollback()
+            raise Exception(f"Failed to add transaction: {str(e)}")
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def update_transaction(self, transaction_id: int, transaction_data: dict, session=None) -> Optional[Transaction]:
+        """
+        更新交易记录
+        
+        Args:
+            transaction_id: 交易ID
+            transaction_data: 包含要更新的字段的字典（只更新提供的字段）
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            Transaction: 更新后的Transaction对象，如果交易不存在则返回None
+        
+        Raises:
+            Exception: 如果更新失败
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            # 查询交易
+            transaction = session.query(Transaction).filter(Transaction.id == transaction_id).first()
+            if not transaction:
+                return None
+            
+            # 处理transaction_type
+            if 'transaction_type' in transaction_data and isinstance(transaction_data['transaction_type'], str):
+                type_str = transaction_data['transaction_type'].upper()
+                if type_str == 'INCOME':
+                    transaction_data['transaction_type'] = TransactionType.INCOME
+                elif type_str == 'EXPENSE':
+                    transaction_data['transaction_type'] = TransactionType.EXPENSE
+                else:
+                    for tt in TransactionType:
+                        if tt.value.upper() == type_str:
+                            transaction_data['transaction_type'] = tt
+                            break
+            
+            # 更新字段（只更新提供的字段）
+            for key, value in transaction_data.items():
+                if hasattr(transaction, key):
+                    setattr(transaction, key, value)
+            
+            session.commit()
+            session.refresh(transaction)
+            return transaction
+        
+        except Exception as e:
+            session.rollback()
+            raise Exception(f"Failed to update transaction: {str(e)}")
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def delete_transaction(self, transaction_id: int, session=None) -> bool:
+        """
+        删除交易记录
+        
+        Args:
+            transaction_id: 交易ID
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            bool: 如果删除成功返回True，如果交易不存在返回False
+        
+        Raises:
+            Exception: 如果删除失败
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            # 查询交易
+            transaction = session.query(Transaction).filter(Transaction.id == transaction_id).first()
+            if not transaction:
+                return False
+            
+            session.delete(transaction)
+            session.commit()
+            return True
+        
+        except Exception as e:
+            session.rollback()
+            raise Exception(f"Failed to delete transaction: {str(e)}")
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def get_transaction_by_id(self, transaction_id: int, session=None) -> Transaction:
+        """
+        根据ID获取交易
+        
+        Args:
+            transaction_id: 交易ID
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            Transaction: Transaction对象，如果不存在则返回None
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            transaction = session.query(Transaction).filter(Transaction.id == transaction_id).first()
+            return transaction
+        except Exception as e:
+            print(f"Error getting transaction by id: {e}")
+            return None
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def get_all_assets_for_dropdown(self, session=None) -> List[Dict]:
+        """
+        获取所有资产用于下拉选择
+        
+        Args:
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            List[Dict]: 格式为 [{"id": 1, "name": "Asset Name"}, ...] 的列表
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            assets = session.query(Asset).order_by(Asset.name).all()
+            return [{"id": asset.id, "name": asset.name} for asset in assets]
+        except Exception as e:
+            print(f"Error getting assets for dropdown: {e}")
+            return []
         finally:
             if should_close:
                 self.close_session(session)

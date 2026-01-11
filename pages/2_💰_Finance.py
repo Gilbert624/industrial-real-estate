@@ -7,9 +7,10 @@ Developer: Gilbert - Brisbane, QLD
 
 import streamlit as st
 import plotly.graph_objects as go
-from models.database import DatabaseManager
-from datetime import datetime
+from models.database import DatabaseManager, TransactionType
+from datetime import datetime, date
 import pandas as pd
+import time
 
 # Page configuration
 st.set_page_config(
@@ -276,9 +277,10 @@ def format_transactions_dataframe(transactions):
             'Date': trans.transaction_date.strftime('%Y-%m-%d'),
             'Type': type_display,
             'Category': category,
-            'Amount': float(trans.amount),
+            'Amount': abs(float(trans.amount)),  # 显示为正数
             'Project': project,
-            'Description': trans.description[:60] + '...' if len(trans.description) > 60 else trans.description
+            'Description': trans.description[:60] + '...' if len(trans.description) > 60 else trans.description,
+            'ID': trans.id  # 用于操作
         })
     
     df = pd.DataFrame(data)
@@ -307,6 +309,161 @@ def main():
     
     # Sidebar
     with st.sidebar:
+        st.header("💳 Transaction Management")
+        
+        # 添加/编辑模式
+        if 'edit_transaction_id' not in st.session_state:
+            st.session_state.edit_transaction_id = None
+        
+        mode = "Edit Transaction" if st.session_state.edit_transaction_id else "Record Transaction"
+        st.subheader(mode)
+        
+        # 如果是编辑模式，加载现有数据
+        editing = st.session_state.edit_transaction_id is not None
+        transaction = None
+        if editing:
+            transaction = db.get_transaction_by_id(st.session_state.edit_transaction_id)
+            if not transaction:
+                st.error("Transaction not found!")
+                st.session_state.edit_transaction_id = None
+                st.rerun()
+        
+        with st.form("transaction_form"):
+            # 交易类型（突出显示）
+            type_options = ["Income", "Expense"]
+            type_index = 0
+            if editing and transaction:
+                type_index = 0 if transaction.transaction_type == TransactionType.INCOME else 1
+            
+            transaction_type = st.radio(
+                "Type*",
+                type_options,
+                horizontal=True,
+                index=type_index
+            )
+            
+            # 基本信息
+            default_date = date.today()
+            if editing and transaction:
+                default_date = transaction.transaction_date
+            
+            transaction_date = st.date_input(
+                "Date*",
+                value=default_date
+            )
+            
+            # Category选项
+            category_options = ["Rental Income", "Construction Cost", "Land Acquisition", 
+                               "Professional Fees", "Financing", "Maintenance", "Other"]
+            category_index = 0
+            if editing and transaction and transaction.category:
+                try:
+                    category_index = category_options.index(transaction.category)
+                except ValueError:
+                    category_index = 0
+            
+            category = st.selectbox(
+                "Category*",
+                category_options,
+                index=category_index
+            )
+            
+            # 金额（大号突出）
+            default_amount = 0.0
+            if editing and transaction:
+                default_amount = abs(float(transaction.amount))
+            
+            amount = st.number_input(
+                "Amount (AUD)*",
+                min_value=0.0,
+                step=1000.0,
+                format="%.2f",
+                value=default_amount
+            )
+            
+            # 关联资产/项目
+            assets = db.get_all_assets_for_dropdown()
+            asset_options = ["None"] + [f"{a['name']}" for a in assets]
+            asset_index = 0
+            if editing and transaction and transaction.asset_id:
+                try:
+                    # 找到对应的asset
+                    for idx, a in enumerate(assets):
+                        if a['id'] == transaction.asset_id:
+                            asset_index = idx + 1
+                            break
+                except:
+                    asset_index = 0
+            
+            asset_id = st.selectbox(
+                "Related Asset",
+                asset_options,
+                index=asset_index
+            )
+            
+            # 描述
+            default_description = ""
+            if editing and transaction:
+                default_description = transaction.description or ""
+            
+            description = st.text_area(
+                "Description*",
+                placeholder="Payment for Q4 rent, Invoice #1234, etc.",
+                value=default_description
+            )
+            
+            # 按钮
+            col1, col2 = st.columns(2)
+            with col1:
+                submitted = st.form_submit_button("💾 Save", use_container_width=True)
+            with col2:
+                cancelled = st.form_submit_button("❌ Cancel", use_container_width=True)
+            
+            if submitted:
+                # 验证
+                if amount <= 0:
+                    st.error("Amount must be positive")
+                elif not description:
+                    st.error("Description is required")
+                else:
+                    # 准备数据
+                    # Expense金额存为负数
+                    final_amount = amount if transaction_type == "Income" else -amount
+                    
+                    # 获取asset_id
+                    selected_asset_id = None
+                    if asset_id != "None":
+                        asset_idx = asset_options.index(asset_id) - 1
+                        selected_asset_id = assets[asset_idx]['id']
+                    
+                    transaction_data = {
+                        "transaction_date": transaction_date,
+                        "transaction_type": transaction_type,
+                        "category": category,
+                        "amount": final_amount,
+                        "asset_id": selected_asset_id,
+                        "description": description
+                    }
+                    
+                    try:
+                        if st.session_state.edit_transaction_id:
+                            db.update_transaction(st.session_state.edit_transaction_id, transaction_data)
+                            st.success("✅ Transaction updated!")
+                        else:
+                            db.add_transaction(transaction_data)
+                            st.success(f"✅ {transaction_type} of ${amount:,.2f} recorded!")
+                        
+                        st.session_state.edit_transaction_id = None
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+            
+            if cancelled:
+                st.session_state.edit_transaction_id = None
+                st.rerun()
+        
+        st.markdown("---")
         st.header("🔍 Filters")
         months = st.selectbox(
             "Time Range",
@@ -412,45 +569,141 @@ def main():
     st.subheader("💳 Recent Transactions")
     try:
         with st.spinner("Loading recent transactions..."):
-            transactions = db.get_recent_transactions(limit=20)
+            # Get more transactions for pagination (limit increased to support pagination)
+            transactions = db.get_recent_transactions(limit=200)
             
             if not transactions:
-                st.info("No transactions found in database.")
+                st.info("No transactions yet. Add your first transaction using the form on the left.")
             else:
-                # Format as DataFrame
-                df = format_transactions_dataframe(transactions)
+                # Pagination
+                items_per_page = 20
+                total_pages = (len(transactions) + items_per_page - 1) // items_per_page if transactions else 1
                 
-                if not df.empty:
-                    # Display DataFrame with proper formatting
-                    display_df = df[['Date', 'Type', 'Category', 'Amount_Formatted', 'Project', 'Description']].copy()
-                    display_df.columns = ['Date', 'Type', 'Category', 'Amount', 'Project', 'Description']
+                # Page selector
+                col_page1, col_page2, col_page3 = st.columns([1, 1, 6])
+                with col_page1:
+                    page = st.number_input("Page", min_value=1, max_value=total_pages, value=1, step=1, key="tx_page")
+                with col_page2:
+                    st.write("")  # Spacer
+                    st.caption(f"of {total_pages}")
+                with col_page3:
+                    st.caption(f"Showing {len(transactions)} total transaction(s)")
+                
+                # Calculate pagination
+                start = (page - 1) * items_per_page
+                end = start + items_per_page
+                display_transactions = transactions[start:end]
+                
+                # Initialize delete confirmation state (only for displayed transactions)
+                for tx in display_transactions:
+                    if f'confirm_delete_tx_{tx.id}' not in st.session_state:
+                        st.session_state[f'confirm_delete_tx_{tx.id}'] = False
+                
+                # Create table header using columns
+                st.markdown("---")
+                header_cols = st.columns([2, 1.5, 2, 1.5, 2, 3, 1, 1])
+                with header_cols[0]:
+                    st.markdown("**Date**")
+                with header_cols[1]:
+                    st.markdown("**Type**")
+                with header_cols[2]:
+                    st.markdown("**Category**")
+                with header_cols[3]:
+                    st.markdown("**Amount**")
+                with header_cols[4]:
+                    st.markdown("**Asset**")
+                with header_cols[5]:
+                    st.markdown("**Description**")
+                with header_cols[6]:
+                    st.markdown("**Edit**")
+                with header_cols[7]:
+                    st.markdown("**Delete**")
+                
+                st.markdown("---")
+                
+                # Display each transaction as a row
+                for tx in display_transactions:
+                    # Create columns for this row
+                    row_cols = st.columns([2, 1.5, 2, 1.5, 2, 3, 1, 1])
                     
-                    st.dataframe(
-                        display_df,
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            'Date': st.column_config.TextColumn('Date', width='small'),
-                            'Type': st.column_config.TextColumn('Type', width='medium'),
-                            'Category': st.column_config.TextColumn('Category', width='medium'),
-                            'Amount': st.column_config.TextColumn('Amount', width='small'),
-                            'Project': st.column_config.TextColumn('Project', width='medium'),
-                            'Description': st.column_config.TextColumn('Description', width='large')
-                        }
-                    )
+                    with row_cols[0]:
+                        st.write(tx.transaction_date.strftime("%Y-%m-%d"))
                     
-                    # Summary stats
-                    col1, col2, col3 = st.columns(3)
-                    total_amount = df['Amount'].sum()
-                    income_total = df[df['Type'] == 'Income']['Amount'].sum()
-                    expense_total = df[df['Type'] == 'Expense']['Amount'].sum()
+                    with row_cols[1]:
+                        type_display = tx.transaction_type.value.replace('_', ' ').title()
+                        # Color code: Income = green, Expense = red
+                        if tx.transaction_type == TransactionType.INCOME:
+                            st.markdown(f'<span style="color: #2ecc71;">{type_display}</span>', unsafe_allow_html=True)
+                        else:
+                            st.markdown(f'<span style="color: #e74c3c;">{type_display}</span>', unsafe_allow_html=True)
                     
-                    with col1:
-                        st.metric("Total Amount", f"${total_amount:,.2f}")
-                    with col2:
-                        st.metric("Total Income", f"${income_total:,.2f}")
-                    with col3:
-                        st.metric("Total Expense", f"${expense_total:,.2f}")
+                    with row_cols[2]:
+                        category = tx.category or (tx.expense_category.value.replace('_', ' ').title() if tx.expense_category else "-")
+                        st.write(category)
+                    
+                    with row_cols[3]:
+                        amount_str = f"${abs(float(tx.amount)):,.2f}"
+                        if tx.transaction_type == TransactionType.INCOME:
+                            st.markdown(f'<span style="color: #2ecc71; font-weight: bold;">{amount_str}</span>', unsafe_allow_html=True)
+                        else:
+                            st.markdown(f'<span style="color: #e74c3c; font-weight: bold;">{amount_str}</span>', unsafe_allow_html=True)
+                    
+                    with row_cols[4]:
+                        asset_name = tx.asset.name if tx.asset else "-"
+                        st.write(asset_name)
+                    
+                    with row_cols[5]:
+                        desc_short = tx.description[:60] + "..." if len(tx.description) > 60 else tx.description
+                        # Use markdown with title attribute for tooltip on hover
+                        if len(tx.description) > 60:
+                            st.markdown(f'<span title="{tx.description}">{desc_short}</span>', unsafe_allow_html=True)
+                        else:
+                            st.write(desc_short)
+                    
+                    with row_cols[6]:
+                        if st.button("✏️", key=f"edit_tx_{tx.id}", help="Edit this transaction", use_container_width=True):
+                            st.session_state.edit_transaction_id = tx.id
+                            st.rerun()
+                    
+                    with row_cols[7]:
+                        if st.button("🗑️", key=f"delete_tx_{tx.id}", help="Delete this transaction", use_container_width=True):
+                            st.session_state[f'confirm_delete_tx_{tx.id}'] = True
+                            st.rerun()
+                    
+                    # Delete confirmation dialog (displayed below the row)
+                    if st.session_state.get(f'confirm_delete_tx_{tx.id}', False):
+                        st.warning(f"⚠️ Are you sure you want to delete this transaction: **{tx.description[:50]}**? This action cannot be undone.")
+                        confirm_col1, confirm_col2 = st.columns(2)
+                        with confirm_col1:
+                            if st.button("✅ Yes, Delete", key=f"confirm_yes_tx_{tx.id}", type="primary", use_container_width=True):
+                                try:
+                                    db.delete_transaction(tx.id)
+                                    st.success(f"✅ Transaction deleted successfully!")
+                                    del st.session_state[f'confirm_delete_tx_{tx.id}']
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ Error deleting transaction: {str(e)}")
+                        
+                        with confirm_col2:
+                            if st.button("❌ Cancel", key=f"confirm_no_tx_{tx.id}", use_container_width=True):
+                                del st.session_state[f'confirm_delete_tx_{tx.id}']
+                                st.rerun()
+                    
+                    st.markdown("---")
+                
+                # Summary stats (based on all transactions, not just current page)
+                st.markdown("---")
+                col1, col2, col3 = st.columns(3)
+                total_income = sum(abs(float(tx.amount)) for tx in transactions if tx.transaction_type == TransactionType.INCOME)
+                total_expense = sum(abs(float(tx.amount)) for tx in transactions if tx.transaction_type == TransactionType.EXPENSE)
+                
+                with col1:
+                    st.metric("Total Income", f"${total_income:,.2f}")
+                with col2:
+                    st.metric("Total Expense", f"${total_expense:,.2f}")
+                with col3:
+                    st.metric("Net", f"${total_income - total_expense:,.2f}")
     except Exception as e:
         st.error(f"Error loading recent transactions: {e}")
         import traceback
