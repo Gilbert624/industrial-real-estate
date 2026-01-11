@@ -684,6 +684,241 @@ class DatabaseManager:
             return []
         finally:
             self.close_session(session)
+    
+    def add_asset(self, asset_data: dict, session=None) -> Asset:
+        """
+        添加新资产
+        
+        Args:
+            asset_data: 包含资产字段的字典
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            Asset: 创建的Asset对象
+        
+        Raises:
+            Exception: 如果创建失败
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            # 处理地址字段 - 如果只提供了address，需要拆分为address_line1
+            # 同时设置必需的suburb, state, postcode字段
+            if 'address' in asset_data and 'address_line1' not in asset_data:
+                asset_data['address_line1'] = asset_data.pop('address')
+            
+            # 确保必需的地址字段存在
+            if 'suburb' not in asset_data:
+                asset_data['suburb'] = asset_data.get('region', 'TBD')
+            if 'state' not in asset_data:
+                asset_data['state'] = 'Queensland'
+            if 'postcode' not in asset_data:
+                asset_data['postcode'] = '0000'
+            
+            # 处理asset_type - 映射用户友好的值到枚举
+            if 'asset_type' in asset_data and isinstance(asset_data['asset_type'], str):
+                asset_type_str = asset_data['asset_type'].lower().replace(' ', '_')
+                asset_type_map = {
+                    'industrial_warehouse': AssetType.WAREHOUSE,
+                    'warehouse': AssetType.WAREHOUSE,
+                    'land': AssetType.LAND,
+                    'mixed_use': AssetType.MIXED_USE
+                }
+                if asset_type_str in asset_type_map:
+                    asset_data['asset_type'] = asset_type_map[asset_type_str]
+                elif asset_type_str in [e.value for e in AssetType]:
+                    # 如果已经是正确的枚举值字符串
+                    for at in AssetType:
+                        if at.value == asset_type_str:
+                            asset_data['asset_type'] = at
+                            break
+            
+            # 处理status - 映射用户友好的值到枚举
+            if 'status' in asset_data and isinstance(asset_data['status'], str):
+                status_str = asset_data['status'].lower().replace(' ', '_')
+                status_map = {
+                    'operating': AssetStatus.ACTIVE,
+                    'under_development': AssetStatus.UNDER_DEVELOPMENT,
+                    'planned': AssetStatus.UNDER_DEVELOPMENT
+                }
+                if status_str in status_map:
+                    asset_data['status'] = status_map[status_str]
+                elif status_str in [e.value for e in AssetStatus]:
+                    # 如果已经是正确的枚举值字符串
+                    for s in AssetStatus:
+                        if s.value == status_str:
+                            asset_data['status'] = s
+                            break
+            
+            # 处理acquisition_date -> purchase_date
+            if 'acquisition_date' in asset_data and 'purchase_date' not in asset_data:
+                asset_data['purchase_date'] = asset_data.pop('acquisition_date')
+            
+            # 创建Asset对象
+            new_asset = Asset(**asset_data)
+            session.add(new_asset)
+            session.commit()
+            session.refresh(new_asset)
+            return new_asset
+        
+        except Exception as e:
+            session.rollback()
+            raise Exception(f"Failed to add asset: {str(e)}")
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def update_asset(self, asset_id: int, asset_data: dict, session=None) -> Asset:
+        """
+        更新资产
+        
+        Args:
+            asset_id: 资产ID
+            asset_data: 包含要更新的字段的字典（只更新提供的字段）
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            Asset: 更新后的Asset对象，如果资产不存在则返回None
+        
+        Raises:
+            Exception: 如果更新失败
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            # 查询资产
+            asset = session.query(Asset).filter(Asset.id == asset_id).first()
+            if not asset:
+                return None
+            
+            # 处理地址字段
+            if 'address' in asset_data:
+                asset_data['address_line1'] = asset_data.pop('address')
+            
+            # 处理asset_type
+            if 'asset_type' in asset_data and isinstance(asset_data['asset_type'], str):
+                asset_type_str = asset_data['asset_type'].lower().replace(' ', '_')
+                asset_type_map = {
+                    'industrial_warehouse': AssetType.WAREHOUSE,
+                    'warehouse': AssetType.WAREHOUSE,
+                    'land': AssetType.LAND,
+                    'mixed_use': AssetType.MIXED_USE
+                }
+                if asset_type_str in asset_type_map:
+                    asset_data['asset_type'] = asset_type_map[asset_type_str]
+                elif asset_type_str in [e.value for e in AssetType]:
+                    for at in AssetType:
+                        if at.value == asset_type_str:
+                            asset_data['asset_type'] = at
+                            break
+            
+            # 处理status
+            if 'status' in asset_data and isinstance(asset_data['status'], str):
+                status_str = asset_data['status'].lower().replace(' ', '_')
+                status_map = {
+                    'operating': AssetStatus.ACTIVE,
+                    'under_development': AssetStatus.UNDER_DEVELOPMENT,
+                    'planned': AssetStatus.UNDER_DEVELOPMENT
+                }
+                if status_str in status_map:
+                    asset_data['status'] = status_map[status_str]
+                elif status_str in [e.value for e in AssetStatus]:
+                    for s in AssetStatus:
+                        if s.value == status_str:
+                            asset_data['status'] = s
+                            break
+            
+            # 处理acquisition_date -> purchase_date
+            if 'acquisition_date' in asset_data:
+                asset_data['purchase_date'] = asset_data.pop('acquisition_date')
+            
+            # 更新字段（只更新提供的字段）
+            for key, value in asset_data.items():
+                if hasattr(asset, key):
+                    setattr(asset, key, value)
+            
+            session.commit()
+            session.refresh(asset)
+            return asset
+        
+        except Exception as e:
+            session.rollback()
+            raise Exception(f"Failed to update asset: {str(e)}")
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def delete_asset(self, asset_id: int, session=None) -> bool:
+        """
+        删除资产
+        
+        Args:
+            asset_id: 资产ID
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            bool: 如果删除成功返回True，如果资产不存在返回False
+        
+        Raises:
+            Exception: 如果删除失败
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            # 查询资产
+            asset = session.query(Asset).filter(Asset.id == asset_id).first()
+            if not asset:
+                return False
+            
+            session.delete(asset)
+            session.commit()
+            return True
+        
+        except Exception as e:
+            session.rollback()
+            raise Exception(f"Failed to delete asset: {str(e)}")
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def get_asset_by_id(self, asset_id: int, session=None) -> Asset:
+        """
+        根据ID获取资产
+        
+        Args:
+            asset_id: 资产ID
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            Asset: Asset对象，如果不存在则返回None
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            asset = session.query(Asset).filter(Asset.id == asset_id).first()
+            return asset
+        except Exception as e:
+            print(f"Error getting asset by id: {e}")
+            return None
+        finally:
+            if should_close:
+                self.close_session(session)
 
 
 # ============================================================================
