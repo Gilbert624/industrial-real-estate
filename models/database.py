@@ -1121,6 +1121,574 @@ class DatabaseManager:
         finally:
             if should_close:
                 self.close_session(session)
+    
+    def get_all_projects(self, session=None) -> List[Project]:
+        """
+        获取所有项目
+        
+        Args:
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            List[Project]: 项目列表，按创建时间降序排列，返回空列表如果出错
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            projects = session.query(Project).options(
+                joinedload(Project.asset)
+            ).order_by(
+                Project.created_at.desc()
+            ).all()
+            return projects
+        except Exception as e:
+            print(f"Error getting all projects: {e}")
+            return []
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def add_project(self, project_data: dict, session=None) -> Project:
+        """
+        添加新项目
+        
+        Args:
+            project_data: 包含项目字段的字典
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            Project: 创建的Project对象
+        
+        Raises:
+            Exception: 如果创建失败
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            # 字段映射：将用户友好的字段名映射到数据库字段名
+            # name -> project_name
+            if 'name' in project_data and 'project_name' not in project_data:
+                project_data['project_name'] = project_data.pop('name')
+            
+            # budget -> total_budget
+            if 'budget' in project_data and 'total_budget' not in project_data:
+                project_data['total_budget'] = project_data.pop('budget')
+            
+            # start_date -> planned_start_date
+            if 'start_date' in project_data and 'planned_start_date' not in project_data:
+                project_data['planned_start_date'] = project_data.pop('start_date')
+                # 如果提供了datetime对象，转换为date
+                if isinstance(project_data['planned_start_date'], datetime):
+                    project_data['planned_start_date'] = project_data['planned_start_date'].date()
+            
+            # expected_completion -> planned_completion_date
+            if 'expected_completion' in project_data and 'planned_completion_date' not in project_data:
+                project_data['planned_completion_date'] = project_data.pop('expected_completion')
+                # 如果提供了datetime对象，转换为date
+                if isinstance(project_data['planned_completion_date'], datetime):
+                    project_data['planned_completion_date'] = project_data['planned_completion_date'].date()
+            
+            # completion_percentage 不是Project模型的字段，忽略或可以存储到notes中
+            if 'completion_percentage' in project_data:
+                # 可以将其添加到notes中，或者直接忽略
+                project_data.pop('completion_percentage')
+            
+            # 移除其他不存在的字段（如project_type, location, land_area_sqm等，这些属于Asset模型）
+            fields_to_remove = ['project_type', 'location', 'land_area_sqm', 'building_area_sqm', 'estimated_value']
+            for field in fields_to_remove:
+                project_data.pop(field, None)
+            
+            # 处理status - 映射字符串到枚举
+            if 'status' in project_data and isinstance(project_data['status'], str):
+                status_str = project_data['status'].lower().replace(' ', '_')
+                # 处理常见的大小写变体
+                status_map = {
+                    'construction': ProjectStatus.CONSTRUCTION,
+                    'planning': ProjectStatus.PLANNING,
+                    'approved': ProjectStatus.APPROVED,
+                    'completed': ProjectStatus.COMPLETED,
+                    'on_hold': ProjectStatus.ON_HOLD,
+                    'cancelled': ProjectStatus.CANCELLED,
+                    'approval_pending': ProjectStatus.APPROVAL_PENDING
+                }
+                if status_str in status_map:
+                    project_data['status'] = status_map[status_str]
+                elif status_str in [e.value for e in ProjectStatus]:
+                    for ps in ProjectStatus:
+                        if ps.value == status_str:
+                            project_data['status'] = ps
+                            break
+            
+            # 确保asset_id存在（如果没有提供，可以尝试从现有资产中选择第一个，但这可能不是最佳实践）
+            # 这里我们先不处理，让数据库约束来处理
+            
+            # 创建Project对象
+            new_project = Project(**project_data)
+            session.add(new_project)
+            session.commit()
+            session.refresh(new_project)
+            return new_project
+        
+        except Exception as e:
+            session.rollback()
+            raise Exception(f"Failed to add project: {str(e)}")
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def update_project(self, project_id: int, project_data: dict, session=None) -> Optional[Project]:
+        """
+        更新项目
+        
+        Args:
+            project_id: 项目ID
+            project_data: 包含要更新的字段的字典（只更新提供的字段）
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            Optional[Project]: 更新后的Project对象，如果项目不存在则返回None
+        
+        Raises:
+            Exception: 如果更新失败
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            # 查询项目
+            project = session.query(Project).filter(Project.id == project_id).first()
+            if not project:
+                return None
+            
+            # 字段映射：将用户友好的字段名映射到数据库字段名
+            # name -> project_name
+            if 'name' in project_data and 'project_name' not in project_data:
+                project_data['project_name'] = project_data.pop('name')
+            
+            # budget -> total_budget
+            if 'budget' in project_data and 'total_budget' not in project_data:
+                project_data['total_budget'] = project_data.pop('budget')
+            
+            # start_date -> planned_start_date
+            if 'start_date' in project_data and 'planned_start_date' not in project_data:
+                project_data['planned_start_date'] = project_data.pop('start_date')
+                if isinstance(project_data['planned_start_date'], datetime):
+                    project_data['planned_start_date'] = project_data['planned_start_date'].date()
+            
+            # expected_completion -> planned_completion_date
+            if 'expected_completion' in project_data and 'planned_completion_date' not in project_data:
+                project_data['planned_completion_date'] = project_data.pop('expected_completion')
+                if isinstance(project_data['planned_completion_date'], datetime):
+                    project_data['planned_completion_date'] = project_data['planned_completion_date'].date()
+            
+            # completion_percentage 不是Project模型的字段，忽略
+            if 'completion_percentage' in project_data:
+                project_data.pop('completion_percentage')
+            
+            # 移除其他不存在的字段
+            fields_to_remove = ['project_type', 'location', 'land_area_sqm', 'building_area_sqm', 'estimated_value']
+            for field in fields_to_remove:
+                project_data.pop(field, None)
+            
+            # 处理status
+            if 'status' in project_data and isinstance(project_data['status'], str):
+                status_str = project_data['status'].lower().replace(' ', '_')
+                status_map = {
+                    'construction': ProjectStatus.CONSTRUCTION,
+                    'planning': ProjectStatus.PLANNING,
+                    'approved': ProjectStatus.APPROVED,
+                    'completed': ProjectStatus.COMPLETED,
+                    'on_hold': ProjectStatus.ON_HOLD,
+                    'cancelled': ProjectStatus.CANCELLED,
+                    'approval_pending': ProjectStatus.APPROVAL_PENDING
+                }
+                if status_str in status_map:
+                    project_data['status'] = status_map[status_str]
+                elif status_str in [e.value for e in ProjectStatus]:
+                    for ps in ProjectStatus:
+                        if ps.value == status_str:
+                            project_data['status'] = ps
+                            break
+            
+            # 更新字段（只更新提供的字段）
+            for key, value in project_data.items():
+                if hasattr(project, key):
+                    setattr(project, key, value)
+            
+            session.commit()
+            session.refresh(project)
+            return project
+        
+        except Exception as e:
+            session.rollback()
+            raise Exception(f"Failed to update project: {str(e)}")
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def delete_project(self, project_id: int, session=None) -> bool:
+        """
+        删除项目
+        
+        注意：关联的transactions不会被自动删除，它们会保留但project_id将变为NULL
+        如果需要同时删除关联的transactions，请先手动删除
+        
+        Args:
+            project_id: 项目ID
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            bool: 如果删除成功返回True，如果项目不存在返回False
+        
+        Raises:
+            Exception: 如果删除失败
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            # 查询项目
+            project = session.query(Project).filter(Project.id == project_id).first()
+            if not project:
+                return False
+            
+            session.delete(project)
+            session.commit()
+            return True
+        
+        except Exception as e:
+            session.rollback()
+            raise Exception(f"Failed to delete project: {str(e)}")
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def get_project_by_id(self, project_id: int, session=None) -> Optional[Project]:
+        """
+        根据ID获取项目
+        
+        Args:
+            project_id: 项目ID
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            Optional[Project]: Project对象，如果不存在则返回None
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            project = session.query(Project).options(
+                joinedload(Project.asset)
+            ).filter(
+                Project.id == project_id
+            ).first()
+            return project
+        except Exception as e:
+            print(f"Error getting project by id: {e}")
+            return None
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def get_project_transactions(self, project_id: int, session=None) -> List[Transaction]:
+        """
+        获取项目的所有交易记录
+        
+        Args:
+            project_id: 项目ID
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            List[Transaction]: 交易列表，按日期降序排列，返回空列表如果出错
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            transactions = session.query(Transaction).options(
+                joinedload(Transaction.asset)
+            ).filter(
+                Transaction.project_id == project_id
+            ).order_by(
+                Transaction.transaction_date.desc(),
+                Transaction.id.desc()
+            ).all()
+            return transactions
+        except Exception as e:
+            print(f"Error getting project transactions: {e}")
+            return []
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def get_project_cost_summary(self, project_id: int, session=None) -> Dict:
+        """
+        获取项目成本汇总
+        
+        Args:
+            project_id: 项目ID
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            Dict: 包含以下键的字典：
+                - total_spent: 总支出（负数交易的绝对值）
+                - transaction_count: 交易数量
+                - budget: 预算
+                - variance: 偏差（预算-实际）
+                - variance_percentage: 偏差百分比
+                如果项目不存在返回空dict
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            # 查询项目
+            project = session.query(Project).filter(Project.id == project_id).first()
+            if not project:
+                return {}
+            
+            # 查询所有关联的交易
+            transactions = session.query(Transaction).filter(
+                Transaction.project_id == project_id
+            ).all()
+            
+            # 计算总支出（负数交易的绝对值，即所有支出交易的绝对值之和）
+            total_spent = 0.0
+            for trans in transactions:
+                # 如果金额为负数（支出），取其绝对值
+                if trans.amount < 0:
+                    total_spent += abs(float(trans.amount))
+            
+            transaction_count = len(transactions)
+            budget = float(project.total_budget) if project.total_budget else 0.0
+            variance = budget - total_spent
+            variance_percentage = (variance / budget * 100) if budget > 0 else 0.0
+            
+            return {
+                "total_spent": total_spent,
+                "transaction_count": transaction_count,
+                "budget": budget,
+                "variance": variance,
+                "variance_percentage": variance_percentage
+            }
+        
+        except Exception as e:
+            print(f"Error getting project cost summary: {e}")
+            return {}
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def get_projects_by_status(self, status: str, session=None) -> List[Project]:
+        """
+        按状态获取项目
+        
+        Args:
+            status: 项目状态（字符串，将被转换为ProjectStatus枚举）
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            List[Project]: 项目列表，按创建时间降序排列，返回空列表如果出错
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            # 将字符串状态转换为枚举
+            status_str = status.lower().replace(' ', '_')
+            status_enum = None
+            if status_str in [e.value for e in ProjectStatus]:
+                for ps in ProjectStatus:
+                    if ps.value == status_str:
+                        status_enum = ps
+                        break
+            
+            if status_enum is None:
+                return []
+            
+            projects = session.query(Project).options(
+                joinedload(Project.asset)
+            ).filter(
+                Project.status == status_enum
+            ).order_by(
+                Project.created_at.desc()
+            ).all()
+            return projects
+        except Exception as e:
+            print(f"Error getting projects by status: {e}")
+            return []
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def get_active_projects_count(self, session=None) -> int:
+        """
+        获取活跃项目数量（status != 'Completed'）
+        
+        Args:
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            int: 活跃项目数量，如果出错返回0
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            count = session.query(Project).filter(
+                Project.status != ProjectStatus.COMPLETED
+            ).count()
+            return count
+        except Exception as e:
+            print(f"Error getting active projects count: {e}")
+            return 0
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def get_total_projects_budget(self, session=None) -> float:
+        """
+        获取所有项目的总预算
+        
+        Args:
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            float: 所有项目的总预算，如果出错返回0.0
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            result = session.query(func.sum(Project.total_budget)).scalar()
+            return float(result) if result is not None else 0.0
+        except Exception as e:
+            print(f"Error getting total projects budget: {e}")
+            return 0.0
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def get_total_projects_cost(self, session=None) -> float:
+        """
+        获取所有项目的总实际成本
+        
+        从Transactions表计算所有项目相关的交易总支出
+        
+        Args:
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            float: 所有项目的总实际成本，如果出错返回0.0
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            # 查询所有有project_id的交易，计算负数交易的绝对值之和
+            transactions = session.query(Transaction).filter(
+                Transaction.project_id.isnot(None)
+            ).all()
+            
+            total_cost = 0.0
+            for trans in transactions:
+                if trans.amount < 0:
+                    total_cost += abs(float(trans.amount))
+            
+            return total_cost
+        except Exception as e:
+            print(f"Error getting total projects cost: {e}")
+            return 0.0
+        finally:
+            if should_close:
+                self.close_session(session)
+    
+    def get_average_completion(self, session=None) -> float:
+        """
+        获取所有项目的平均完成度
+        
+        基于预算使用率计算（actual_cost / total_budget * 100）
+        只计算有预算的项目
+        
+        Args:
+            session: 可选的数据库会话，如果为None则创建新会话
+        
+        Returns:
+            float: 所有项目的平均完成度（百分比），如果出错或没有项目返回0.0
+        """
+        if session is None:
+            session = self.get_session()
+            should_close = True
+        else:
+            should_close = False
+        
+        try:
+            # 查询所有有预算的项目
+            projects = session.query(Project).filter(
+                Project.total_budget.isnot(None),
+                Project.total_budget > 0
+            ).all()
+            
+            if not projects:
+                return 0.0
+            
+            total_completion = 0.0
+            valid_count = 0
+            
+            for project in projects:
+                if project.total_budget and project.total_budget > 0:
+                    actual_cost = float(project.actual_cost) if project.actual_cost else 0.0
+                    budget = float(project.total_budget)
+                    completion = (actual_cost / budget) * 100
+                    total_completion += completion
+                    valid_count += 1
+            
+            if valid_count == 0:
+                return 0.0
+            
+            return total_completion / valid_count
+        except Exception as e:
+            print(f"Error getting average completion: {e}")
+            return 0.0
+        finally:
+            if should_close:
+                self.close_session(session)
 
 
 # ============================================================================
