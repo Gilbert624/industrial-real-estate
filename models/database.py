@@ -652,6 +652,113 @@ class DDCashFlow(Base):
 
 
 # ============================================================================
+# MARKET INTELLIGENCE MODELS
+# ============================================================================
+
+class MarketIndicator(Base):
+    """市场指标数据"""
+    __tablename__ = 'market_indicators'
+    
+    id = Column(Integer, primary_key=True)
+    indicator_type = Column(String(100))  # GDP, Unemployment, Interest Rate, etc.
+    region = Column(String(100))  # Australia, Queensland, Brisbane, Sunshine Coast
+    value = Column(Float)
+    previous_value = Column(Float, nullable=True)
+    change_percentage = Column(Float, nullable=True)
+    period = Column(String(50))  # Q3 2025, December 2025, etc.
+    date = Column(DateTime, default=datetime.utcnow)
+    source = Column(String(100))  # ABS, RBA, World Bank, etc.
+    source_url = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class DevelopmentProject(Base):
+    """开发项目追踪"""
+    __tablename__ = 'development_projects'
+    
+    id = Column(Integer, primary_key=True)
+    project_name = Column(String(200))
+    developer = Column(String(200), nullable=True)
+    location = Column(String(200))
+    region = Column(String(100))  # Brisbane, Sunshine Coast, etc.
+    project_type = Column(String(100))  # Industrial Warehouse, Logistics Center, etc.
+    size_sqm = Column(Float, nullable=True)
+    estimated_value = Column(Float, nullable=True)
+    status = Column(String(100))  # Approved, Under Construction, Completed, etc.
+    approval_date = Column(DateTime, nullable=True)
+    completion_date = Column(DateTime, nullable=True)
+    is_competitor = Column(Boolean, default=False)
+    notes = Column(Text, nullable=True)
+    source = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class RentalData(Base):
+    """租金数据"""
+    __tablename__ = 'rental_data'
+    
+    id = Column(Integer, primary_key=True)
+    region = Column(String(100))  # Brisbane, Sunshine Coast, specific suburb
+    property_type = Column(String(100))  # Industrial Warehouse, Logistics Center, etc.
+    size_category = Column(String(50))  # Small (<5000sqm), Medium, Large
+    average_rent_per_sqm = Column(Float)  # per year
+    min_rent = Column(Float, nullable=True)
+    max_rent = Column(Float, nullable=True)
+    vacancy_rate = Column(Float, nullable=True)
+    sample_size = Column(Integer, nullable=True)  # number of properties in sample
+    period = Column(String(50))  # Q4 2025, December 2025
+    date = Column(DateTime, default=datetime.utcnow)
+    source = Column(String(100))  # Domain, RealCommercial, Manual Entry
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class InfrastructureProject(Base):
+    """基础设施项目"""
+    __tablename__ = 'infrastructure_projects'
+    
+    id = Column(Integer, primary_key=True)
+    project_name = Column(String(200))
+    region = Column(String(100))
+    project_type = Column(String(100))  # Transport, Utilities, Port, etc.
+    investment_amount = Column(Float, nullable=True)
+    status = Column(String(100))  # Planning, Under Construction, Completed
+    start_date = Column(DateTime, nullable=True)
+    completion_date = Column(DateTime, nullable=True)
+    impact_on_industrial = Column(Text, nullable=True)
+    source = Column(String(100), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CompetitorAnalysis(Base):
+    """竞争对手分析"""
+    __tablename__ = 'competitor_analysis'
+    
+    id = Column(Integer, primary_key=True)
+    competitor_name = Column(String(200))  # Goodman, Charter Hall, etc.
+    region = Column(String(100))
+    portfolio_size_sqm = Column(Float, nullable=True)
+    number_of_properties = Column(Integer, nullable=True)
+    average_rent = Column(Float, nullable=True)
+    occupancy_rate = Column(Float, nullable=True)
+    recent_activity = Column(Text, nullable=True)
+    strengths = Column(Text, nullable=True)
+    weaknesses = Column(Text, nullable=True)
+    period = Column(String(50))
+    date = Column(DateTime, default=datetime.utcnow)
+    source = Column(String(200), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ============================================================================
 # DATABASE UTILITIES
 # ============================================================================
 
@@ -2118,6 +2225,151 @@ class DatabaseManager:
         finally:
             if managed_session:
                 session.close()
+
+    # ==================== Market Intelligence Methods ====================
+    
+    def add_market_indicator(self, indicator_data: dict):
+        """添加市场指标"""
+        session = self.get_session()
+        try:
+            indicator = MarketIndicator(**indicator_data)
+            session.add(indicator)
+            session.commit()
+            return indicator
+        except Exception as e:
+            session.rollback()
+            raise e
+        finally:
+            session.close()
+    
+    def get_latest_indicators(self, indicator_type=None, region=None, limit=10):
+        """获取最新的市场指标"""
+        session = self.get_session()
+        try:
+            query = session.query(MarketIndicator).order_by(MarketIndicator.date.desc())
+            
+            if indicator_type:
+                query = query.filter(MarketIndicator.indicator_type == indicator_type)
+            if region:
+                query = query.filter(MarketIndicator.region == region)
+            
+            return query.limit(limit).all()
+        finally:
+            session.close()
+    
+    def add_development_project(self, project_data: dict):
+        """添加开发项目"""
+        session = self.get_session()
+        try:
+            project = DevelopmentProject(**project_data)
+            session.add(project)
+            session.commit()
+            return project
+        except Exception as e:
+            session.rollback()
+            raise e
+        finally:
+            session.close()
+    
+    def get_development_projects(self, region=None, status=None, is_competitor=None):
+        """获取开发项目"""
+        session = self.get_session()
+        try:
+            query = session.query(DevelopmentProject).order_by(DevelopmentProject.created_at.desc())
+            
+            if region:
+                query = query.filter(DevelopmentProject.region == region)
+            if status:
+                query = query.filter(DevelopmentProject.status == status)
+            if is_competitor is not None:
+                query = query.filter(DevelopmentProject.is_competitor == is_competitor)
+            
+            return query.all()
+        finally:
+            session.close()
+    
+    def add_rental_data(self, rental_data: dict):
+        """添加租金数据"""
+        session = self.get_session()
+        try:
+            rental = RentalData(**rental_data)
+            session.add(rental)
+            session.commit()
+            return rental
+        except Exception as e:
+            session.rollback()
+            raise e
+        finally:
+            session.close()
+    
+    def get_rental_data(self, region=None, property_type=None, limit=10):
+        """获取租金数据"""
+        session = self.get_session()
+        try:
+            query = session.query(RentalData).order_by(RentalData.date.desc())
+            
+            if region:
+                query = query.filter(RentalData.region == region)
+            if property_type:
+                query = query.filter(RentalData.property_type == property_type)
+            
+            return query.limit(limit).all()
+        finally:
+            session.close()
+    
+    def add_infrastructure_project(self, project_data: dict):
+        """添加基础设施项目"""
+        session = self.get_session()
+        try:
+            project = InfrastructureProject(**project_data)
+            session.add(project)
+            session.commit()
+            return project
+        except Exception as e:
+            session.rollback()
+            raise e
+        finally:
+            session.close()
+    
+    def get_infrastructure_projects(self, region=None):
+        """获取基础设施项目"""
+        session = self.get_session()
+        try:
+            query = session.query(InfrastructureProject).order_by(InfrastructureProject.created_at.desc())
+            
+            if region:
+                query = query.filter(InfrastructureProject.region == region)
+            
+            return query.all()
+        finally:
+            session.close()
+    
+    def add_competitor_analysis(self, analysis_data: dict):
+        """添加竞争对手分析"""
+        session = self.get_session()
+        try:
+            analysis = CompetitorAnalysis(**analysis_data)
+            session.add(analysis)
+            session.commit()
+            return analysis
+        except Exception as e:
+            session.rollback()
+            raise e
+        finally:
+            session.close()
+    
+    def get_competitor_analysis(self, region=None):
+        """获取竞争对手分析"""
+        session = self.get_session()
+        try:
+            query = session.query(CompetitorAnalysis).order_by(CompetitorAnalysis.date.desc())
+            
+            if region:
+                query = query.filter(CompetitorAnalysis.region == region)
+            
+            return query.all()
+        finally:
+            session.close()
 
 
 # ============================================================================
