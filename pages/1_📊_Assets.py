@@ -9,6 +9,8 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 from sqlalchemy import func, and_, or_
+from config.theme import generate_css
+from config.i18n import t, get_current_language
 
 # Import database models
 try:
@@ -28,35 +30,8 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS
-st.markdown("""
-    <style>
-    .main {
-        background-color: #f8f9fa;
-    }
-    .stMetric {
-        background-color: white;
-        padding: 15px;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    h1 {
-        color: #1e3a5f;
-        font-weight: 600;
-    }
-    h2, h3 {
-        color: #2c5282;
-        font-weight: 500;
-    }
-    .asset-card {
-        background-color: white;
-        padding: 20px;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        margin-bottom: 15px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# 应用专业主题
+st.markdown(generate_css('light'), unsafe_allow_html=True)
 
 
 @st.cache_resource
@@ -307,8 +282,8 @@ def display_asset_details(asset, session):
 def main():
     """Main application function"""
     
-    st.title("📊 Asset Portfolio Management")
-    st.markdown("### Industrial Real Estate Portfolio - Brisbane & Sunshine Coast")
+    st.title(f"📊 {t('assets.title')}")
+    st.markdown(f"### {t('assets.subtitle')}")
     
     if not DB_AVAILABLE:
         st.error("⚠️ Database models are not available. Please check your installation.")
@@ -323,28 +298,28 @@ def main():
     
     try:
         # Sidebar filters
-        st.sidebar.markdown("### 🔍 Filters")
+        st.sidebar.markdown(f"### 🔍 {t('assets.filters')}")
         
         # Get filter options
         filter_options = get_filter_options(session)
         
         # Region filter
         selected_region = st.sidebar.selectbox(
-            "Region",
+            t('assets.region'),
             options=filter_options['regions'],
             index=0
         )
         
         # Asset type filter
         selected_type = st.sidebar.selectbox(
-            "Asset Type",
+            t('assets.asset_type'),
             options=filter_options['types'],
             index=0
         )
         
         # Status filter
         selected_status = st.sidebar.selectbox(
-            "Status",
+            t('common.status'),
             options=filter_options['statuses'],
             index=0
         )
@@ -352,21 +327,21 @@ def main():
         st.sidebar.markdown("---")
         
         # Add refresh button
-        if st.sidebar.button("🔄 Refresh Data"):
+        if st.sidebar.button(f"🔄 {t('assets.refresh_data')}"):
             st.cache_resource.clear()
             st.rerun()
         
         st.sidebar.markdown("---")
         
         # Asset Management Form
-        st.sidebar.header("Asset Management")
+        st.sidebar.header(t('assets.asset_management'))
         
         # Initialize session state for edit mode
         if 'edit_asset_id' not in st.session_state:
             st.session_state.edit_asset_id = None
         
         # Determine mode
-        mode = "Edit Asset" if st.session_state.edit_asset_id else "Add New Asset"
+        mode = t('assets.edit_asset') if st.session_state.edit_asset_id else t('assets.add_new_asset')
         st.sidebar.subheader(mode)
         
         # Load asset data if in edit mode
@@ -381,13 +356,13 @@ def main():
         with st.sidebar.form("asset_form"):
             # Basic information
             name = st.text_input(
-                "Project Name*",
+                f"{t('assets.project_name')}*",
                 value=asset.name if asset else "",
                 help="Name of the asset/project"
             )
             
             address = st.text_area(
-                "Address*",
+                f"{t('assets.address')}*",
                 value=asset.address_line1 if asset else "",
                 help="Street address"
             )
@@ -397,13 +372,13 @@ def main():
             with col1:
                 region_options = ["Brisbane", "Sunshine Coast"]
                 region_index = region_options.index(asset.region) if asset and asset.region in region_options else 0
-                region = st.selectbox("Region*", region_options, index=region_index)
+                region = st.selectbox(f"{t('assets.region')}*", region_options, index=region_index)
                 
-                asset_type_options = ["Industrial Warehouse", "Land", "Mixed Use"]
+                asset_type_options = [t('assets.asset_types.industrial_warehouse'), t('assets.asset_types.land'), t('assets.asset_types.mixed_use')]
                 asset_type_map = {
-                    "Industrial Warehouse": "warehouse",
-                    "Land": "land",
-                    "Mixed Use": "mixed_use"
+                    t('assets.asset_types.industrial_warehouse'): "warehouse",
+                    t('assets.asset_types.land'): "land",
+                    t('assets.asset_types.mixed_use'): "mixed_use"
                 }
                 # Find current type index
                 current_type_display = None
@@ -414,14 +389,14 @@ def main():
                             current_type_display = display
                             break
                 type_index = asset_type_options.index(current_type_display) if current_type_display in asset_type_options else 0
-                asset_type = st.selectbox("Type*", asset_type_options, index=type_index)
+                asset_type = st.selectbox(f"{t('common.type')}*", asset_type_options, index=type_index)
             
             with col2:
-                status_options = ["Operating", "Under Development", "Planned"]
+                status_options = [t('assets.status_options.operating'), t('assets.status_options.under_development'), t('assets.status_options.planned')]
                 status_map = {
-                    "Operating": "active",
-                    "Under Development": "under_development",
-                    "Planned": "under_development"
+                    t('assets.status_options.operating'): "active",
+                    t('assets.status_options.under_development'): "under_development",
+                    t('assets.status_options.planned'): "under_development"
                 }
                 # Find current status index
                 current_status_display = None
@@ -432,10 +407,10 @@ def main():
                             current_status_display = display
                             break
                 status_index = status_options.index(current_status_display) if current_status_display in status_options else 0
-                status = st.selectbox("Status*", status_options, index=status_index)
+                status = st.selectbox(f"{t('common.status')}*", status_options, index=status_index)
                 
                 acquisition_date = st.date_input(
-                    "Acquisition Date",
+                    t('assets.acquisition_date'),
                     value=asset.purchase_date if asset and asset.purchase_date else date.today(),
                     help="Date of acquisition"
                 )
@@ -444,14 +419,14 @@ def main():
             col3, col4 = st.columns(2)
             with col3:
                 land_area = st.number_input(
-                    "Land Area (sqm)*",
+                    f"{t('assets.land_area')}*",
                     min_value=0.0,
                     value=float(asset.land_area_sqm) if asset and asset.land_area_sqm else 0.0,
                     step=1.0,
                     format="%.0f"
                 )
                 building_area = st.number_input(
-                    "Building Area (sqm)",
+                    f"{t('assets.building_area')}*",
                     min_value=0.0,
                     value=float(asset.building_area_sqm) if asset and asset.building_area_sqm else 0.0,
                     step=1.0,
@@ -460,7 +435,7 @@ def main():
             
             with col4:
                 valuation = st.number_input(
-                    "Current Valuation (AUD)*",
+                    f"{t('assets.current_valuation')} (AUD)*",
                     min_value=0.0,
                     value=float(asset.current_valuation) if asset and asset.current_valuation else 0.0,
                     step=1000.0,
@@ -468,7 +443,7 @@ def main():
                 )
             
             description = st.text_area(
-                "Description",
+                t('common.description'),
                 value=asset.description if asset and asset.description else "",
                 help="Additional description or notes"
             )
@@ -476,21 +451,21 @@ def main():
             # Form buttons
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
-                submitted = st.form_submit_button("💾 Save", use_container_width=True)
+                submitted = st.form_submit_button(f"💾 {t('common.save')}", use_container_width=True)
             with col_btn2:
-                cancelled = st.form_submit_button("❌ Cancel", use_container_width=True)
+                cancelled = st.form_submit_button(f"❌ {t('common.cancel')}", use_container_width=True)
             
             if submitted:
                 # Validation
                 errors = []
                 if not name or not name.strip():
-                    errors.append("Project Name is required")
+                    errors.append(f"{t('assets.project_name')} {t('validation.required')}")
                 if not address or not address.strip():
-                    errors.append("Address is required")
+                    errors.append(f"{t('assets.address')} {t('validation.required')}")
                 if land_area <= 0:
-                    errors.append("Land Area must be positive")
+                    errors.append(f"{t('assets.land_area')} {t('validation.positive_number')}")
                 if valuation <= 0:
-                    errors.append("Current Valuation must be positive")
+                    errors.append(f"{t('assets.current_valuation')} {t('validation.positive_number')}")
                 
                 if errors:
                     for error in errors:
@@ -517,15 +492,15 @@ def main():
                     try:
                         if st.session_state.edit_asset_id:
                             db.update_asset(st.session_state.edit_asset_id, asset_data, session)
-                            st.sidebar.success("✅ Asset updated successfully!")
+                            st.sidebar.success(f"✅ {t('assets.asset_saved')}")
                         else:
                             db.add_asset(asset_data, session)
-                            st.sidebar.success("✅ Asset added successfully!")
+                            st.sidebar.success(f"✅ {t('assets.asset_saved')}")
                         
                         st.session_state.edit_asset_id = None
                         st.rerun()
                     except Exception as e:
-                        st.sidebar.error(f"❌ Error: {str(e)}")
+                        st.sidebar.error(f"❌ {t('messages.error_occurred')}: {str(e)}")
             
             if cancelled:
                 st.session_state.edit_asset_id = None
@@ -544,14 +519,15 @@ def main():
         metrics = calculate_metrics(assets)
         
         # Display key metrics
+        st.markdown('<div style="margin-bottom: 2rem;">', unsafe_allow_html=True)
         st.markdown("---")
-        st.markdown("### 📈 Portfolio Summary")
+        st.markdown(f"### 📈 {t('home.portfolio_overview')}")
         
         col1, col2, col3 = st.columns(3)
         
         with col1:
             st.metric(
-                label="Total Assets",
+                label=t('home.total_assets'),
                 value=f"{metrics['total_assets']}",
                 help="Total number of assets matching current filters"
             )
@@ -559,7 +535,7 @@ def main():
         with col2:
             valuation_millions = metrics['total_valuation'] / 1_000_000
             st.metric(
-                label="Total Valuation",
+                label=t('assets.total_portfolio_value'),
                 value=f"${valuation_millions:.2f}M AUD",
                 help="Sum of current valuations for filtered assets"
             )
@@ -567,18 +543,19 @@ def main():
         with col3:
             avg_millions = metrics['avg_valuation'] / 1_000_000
             st.metric(
-                label="Average Asset Value",
+                label=t('assets.average_asset_value'),
                 value=f"${avg_millions:.2f}M AUD",
                 help="Average valuation per asset"
             )
         
-        st.markdown("---")
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
         
         # Display assets table
-        st.markdown("### 🏢 Asset List")
+        st.markdown(f"### 🏢 {t('assets.title')}")
         
         if not assets:
-            st.info("No assets found matching the selected filters.")
+            st.info(t('messages.no_results'))
         else:
             # Create DataFrame
             df = format_asset_dataframe(assets)
@@ -638,7 +615,7 @@ def main():
             
             # Asset Operations (Edit/Delete buttons)
             st.markdown("### ⚙️ Asset Operations")
-            st.info(f"📊 Showing {len(assets)} asset(s) | Use buttons below to edit or delete assets")
+            st.info(f"📊 Showing {len(assets)} asset(s) | Use buttons below to {t('common.edit')} or {t('common.delete')} assets")
             
             # Initialize delete confirmation state
             for asset in assets:
@@ -653,35 +630,35 @@ def main():
                     st.write(f"**{asset.name}** - {asset.region} | Valuation: ${asset.current_valuation:,.2f}" if asset.current_valuation else f"**{asset.name}** - {asset.region}")
                 
                 with col2:
-                    if st.button("✏️ Edit", key=f"edit_{asset.id}", help="Edit this asset", use_container_width=True):
+                    if st.button(f"✏️ {t('common.edit')}", key=f"edit_{asset.id}", help="Edit this asset", use_container_width=True):
                         st.session_state.edit_asset_id = asset.id
                         st.rerun()
                 
                 with col3:
-                    if st.button("🗑️ Delete", key=f"delete_{asset.id}", help="Delete this asset", use_container_width=True):
+                    if st.button(f"🗑️ {t('common.delete')}", key=f"delete_{asset.id}", help="Delete this asset", use_container_width=True):
                         st.session_state[f'confirm_delete_{asset.id}'] = True
                         st.rerun()
             
             # Delete confirmation dialogs
             for asset in assets:
                 if st.session_state.get(f'confirm_delete_{asset.id}', False):
-                    st.warning(f"⚠️ Are you sure you want to delete **{asset.name}**? This action cannot be undone.")
+                    st.warning(f"⚠️ {t('assets.delete_confirm')}")
                     col1, col2 = st.columns(2)
                     with col1:
-                        if st.button("✅ Yes, Delete", key=f"confirm_yes_{asset.id}", type="primary", use_container_width=True):
+                        if st.button(f"✅ {t('common.yes')}, {t('common.delete')}", key=f"confirm_yes_{asset.id}", type="primary", use_container_width=True):
                             try:
                                 success = db.delete_asset(asset.id, session)
                                 if success:
-                                    st.success(f"✅ {asset.name} deleted successfully!")
+                                    st.success(f"✅ {t('assets.asset_deleted')}")
                                     del st.session_state[f'confirm_delete_{asset.id}']
                                     st.rerun()
                                 else:
                                     st.error("Asset not found")
                             except Exception as e:
-                                st.error(f"❌ Error deleting asset: {str(e)}")
+                                st.error(f"❌ {t('messages.error_occurred')}: {str(e)}")
                     
                     with col2:
-                        if st.button("❌ Cancel", key=f"confirm_no_{asset.id}", use_container_width=True):
+                        if st.button(f"❌ {t('common.cancel')}", key=f"confirm_no_{asset.id}", use_container_width=True):
                             del st.session_state[f'confirm_delete_{asset.id}']
                             st.rerun()
             

@@ -9,6 +9,8 @@ import streamlit as st
 from utils.ai_assistant import AIAssistant
 import os
 from datetime import datetime
+from config.theme import generate_css
+from config.i18n import t, get_current_language
 
 # Page configuration
 st.set_page_config(
@@ -17,25 +19,11 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS for professional styling
-st.markdown("""
-    <style>
-    .main {
-        background-color: #f8f9fa;
-    }
-    h1 {
-        color: #1e3a5f;
-        font-weight: 600;
-    }
-    h2, h3 {
-        color: #2c5282;
-        font-weight: 500;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# 应用专业主题
+st.markdown(generate_css('light'), unsafe_allow_html=True)
 
-st.title("🤖 AI Financial Assistant")
-st.write("Ask questions about your portfolio in natural language, or use quick analysis tools.")
+st.title(f"🤖 {t('ai.title')}")
+st.write(t('ai.subtitle'))
 
 # Check API key
 api_key = os.getenv('ANTHROPIC_API_KEY')
@@ -59,11 +47,11 @@ except Exception as e:
     st.stop()
 
 # Create tabs
-tab1, tab2 = st.tabs(["💬 Ask Questions", "⚡ Quick Analysis"])
+tab1, tab2 = st.tabs([f"💬 {t('ai.ask_questions')}", f"⚡ {t('ai.quick_analysis')}"])
 
 # ==================== Tab 1: Ask Questions ====================
 with tab1:
-    st.subheader("Ask Me Anything About Your Finances")
+    st.subheader(f"{t('ai.ask_questions')}")
     st.write("Examples: *'How is my cash flow?'*, *'Which project is over budget?'*, *'What should I focus on this month?'*")
     
     # Chat history in session state
@@ -73,16 +61,16 @@ with tab1:
     # Question input
     with st.form("question_form", clear_on_submit=True):
         user_question = st.text_area(
-            "Your Question:",
+            f"{t('ai.your_question')}:",
             placeholder="e.g., Analyze my current financial position and suggest priorities...",
             height=100
         )
         
         col1, col2 = st.columns([1, 4])
         with col1:
-            submitted = st.form_submit_button("🚀 Ask Claude", use_container_width=True)
+            submitted = st.form_submit_button(f"🚀 {t('ai.ask_claude')}", use_container_width=True)
         with col2:
-            include_context = st.checkbox("Include financial data context", value=True)
+            include_context = st.checkbox(t('ai.include_context'), value=True)
     
     # Process question
     if submitted and user_question:
@@ -100,20 +88,20 @@ with tab1:
                 
                 # Display result based on type
                 if answer.get('cached'):
-                    st.success("✅ Answer retrieved from cache (instant & free!)")
+                    st.success(f"✅ {t('ai.cached_answer')}")
                 elif answer.get('error'):
-                    st.error("❌ Error occurred")
+                    st.error(f"❌ {t('messages.error_occurred')}")
                 else:
                     model_emoji = "🚀" if answer.get('model') == 'sonnet' else "⚡"
                     model_name = answer.get('model', 'AI').title()
                     cost = answer.get('cost', 0)
                     
-                    st.success(f"✅ Answer from Claude {model_name} {model_emoji}")
+                    st.success(f"✅ {t('ai.answer_from')} Claude {model_name} {model_emoji}")
                     
                     # Show cost info
                     col1, col2, col3 = st.columns(3)
                     with col1:
-                        st.caption(f"💰 Cost: ${cost:.4f}")
+                        st.caption(f"💰 {t('ai.cost')}: ${cost:.4f}")
                     with col2:
                         st.caption(f"📊 Tokens: {answer.get('input_tokens',0)+answer.get('output_tokens',0)}")
                     with col3:
@@ -128,11 +116,11 @@ with tab1:
     # Display chat history
     if st.session_state.chat_history:
         st.write("---")
-        st.subheader("💬 Conversation History")
+        st.subheader(f"💬 {t('ai.conversation_history')}")
         
         for i, chat in enumerate(reversed(st.session_state.chat_history)):
             with st.expander(f"Q: {chat['question'][:80]}...", expanded=(i==0)):
-                st.write("**Your Question:**")
+                st.write(f"**{t('ai.your_question')}:**")
                 st.write(chat['question'])
                 
                 st.write("**Claude's Answer:**")
@@ -149,7 +137,7 @@ with tab1:
                         st.caption(f"💰 ${cost:.4f} | Model: {model.title()}")
         
         # Clear history button
-        if st.button("🗑️ Clear History"):
+        if st.button(f"🗑️ {t('ai.clear_history')}"):
             st.session_state.chat_history = []
             st.rerun()
     else:
@@ -157,16 +145,16 @@ with tab1:
 
 # ==================== Tab 2: Quick Analysis ====================
 with tab2:
-    st.subheader("⚡ One-Click Analysis Tools")
+    st.subheader(f"⚡ {t('ai.quick_analysis')}")
     st.write("Get instant insights with pre-configured analysis prompts.")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.write("**💰 Cash Flow Analysis**")
+        st.write(f"**💰 {t('ai.analyze_cash_flow')}**")
         st.write("Analyze your current cash position, income, expenses, and trends.")
         
-        if st.button("🔍 Analyze Cash Flow", use_container_width=True):
+        if st.button(f"🔍 {t('ai.analyze_cash_flow')}", use_container_width=True):
             with st.spinner("Analyzing cash flow..."):
                 try:
                     result = assistant.analyze_cash_flow()
@@ -177,14 +165,14 @@ with tab2:
                     if not result.get('cached', False) and not result.get('error'):
                         st.caption(f"💰 ${result.get('cost', 0):.4f} | ⚡ {result.get('model', 'haiku').title()} model")
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    st.error(f"{t('messages.error_occurred')}: {e}")
         
         st.write("")
         
-        st.write("**📊 Trend Analysis**")
+        st.write(f"**📊 {t('ai.identify_trends')}**")
         st.write("Identify patterns and trends in your 6-month financial data.")
         
-        if st.button("📈 Identify Trends", use_container_width=True):
+        if st.button(f"📈 {t('ai.identify_trends')}", use_container_width=True):
             with st.spinner("Analyzing trends..."):
                 try:
                     result = assistant.identify_trends()
@@ -195,13 +183,13 @@ with tab2:
                     if not result.get('cached', False) and not result.get('error'):
                         st.caption(f"💰 ${result.get('cost', 0):.4f} | ⚡ {result.get('model', 'haiku').title()} model")
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    st.error(f"{t('messages.error_occurred')}: {e}")
     
     with col2:
-        st.write("**🏗️ Project Comparison**")
+        st.write(f"**🏗️ {t('ai.compare_projects')}**")
         st.write("Compare active projects: performance, budget status, concerns.")
         
-        if st.button("⚖️ Compare Projects", use_container_width=True):
+        if st.button(f"⚖️ {t('ai.compare_projects')}", use_container_width=True):
             with st.spinner("Comparing projects..."):
                 try:
                     result = assistant.compare_projects()
@@ -212,14 +200,14 @@ with tab2:
                     if not result.get('cached', False) and not result.get('error'):
                         st.caption(f"💰 ${result.get('cost', 0):.4f} | ⚡ {result.get('model', 'haiku').title()} model")
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    st.error(f"{t('messages.error_occurred')}: {e}")
         
         st.write("")
         
-        st.write("**✅ Action Items**")
+        st.write(f"**✅ {t('ai.get_recommendations')}**")
         st.write("Get top 3-5 recommended actions based on your complete financial picture.")
         
-        if st.button("🎯 Get Recommendations", use_container_width=True):
+        if st.button(f"🎯 {t('ai.get_recommendations')}", use_container_width=True):
             with st.spinner("Generating recommendations..."):
                 try:
                     result = assistant.suggest_actions()
@@ -230,11 +218,15 @@ with tab2:
                     if not result.get('cached', False) and not result.get('error'):
                         st.caption(f"💰 ${result.get('cost', 0):.4f} | ⚡ {result.get('model', 'haiku').title()} model")
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    st.error(f"{t('messages.error_occurred')}: {e}")
 
 # ==================== Sidebar Info ====================
 with st.sidebar:
-    st.header("📊 Session Statistics")
+    st.markdown("""
+    <div class="bento-card" style="margin-bottom: 1.5rem;">
+        <h3 style="margin-bottom: 1rem; color: var(--primary);">📊 Session Statistics</h3>
+    </div>
+    """, unsafe_allow_html=True)
     
     # 获取session统计
     if 'ai_assistant' in st.session_state:
@@ -290,10 +282,10 @@ with st.sidebar:
     
     st.write("---")
     
-    st.header("ℹ️ About AI Assistant")
+    st.header(f"ℹ️ {t('ai.about')}")
     
-    st.write("**Powered by Claude (Sonnet 4 & Haiku)**")
-    st.write("This assistant has access to your:")
+    st.write(f"**{t('ai.powered_by')}**")
+    st.write(f"{t('ai.has_access_to')}")
     st.write("- 💰 Cash balance and flow")
     st.write("- 📊 Asset portfolio")
     st.write("- 🏗️ Active projects")
@@ -302,7 +294,7 @@ with st.sidebar:
     
     st.write("---")
     
-    st.write("**Tips for Best Results:**")
+    st.write(f"**{t('ai.tips_title')}:**")
     st.write("✅ Be specific in your questions")
     st.write("✅ Ask about trends, not just numbers")
     st.write("✅ Request actionable advice")
@@ -310,7 +302,7 @@ with st.sidebar:
     
     st.write("---")
     
-    st.write("**Example Questions:**")
+    st.write(f"**{t('ai.example_questions')}:**")
     st.code("""
 - How is my cash flow trending?
 - Which project needs attention?

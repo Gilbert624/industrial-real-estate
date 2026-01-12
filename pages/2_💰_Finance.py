@@ -11,6 +11,9 @@ from models.database import DatabaseManager, TransactionType
 from datetime import datetime, date
 import pandas as pd
 import time
+from config.theme import generate_css
+from utils.chart_styles import get_chart_layout, apply_professional_theme_to_figure, CHART_COLORS
+from config.i18n import t, get_current_language
 
 # Page configuration
 st.set_page_config(
@@ -19,28 +22,8 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS for professional styling
-st.markdown("""
-    <style>
-    .main {
-        background-color: #f8f9fa;
-    }
-    .stMetric {
-        background-color: white;
-        padding: 15px;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    h1 {
-        color: #1e3a5f;
-        font-weight: 600;
-    }
-    h2, h3 {
-        color: #2c5282;
-        font-weight: 500;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# 应用专业主题
+st.markdown(generate_css('light'), unsafe_allow_html=True)
 
 
 @st.cache_resource
@@ -163,6 +146,8 @@ def display_cashflow_trend_chart(trend_data, months):
         )
     )
     
+    fig = apply_professional_theme_to_figure(fig, theme='light')
+    
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -246,6 +231,8 @@ def display_income_expense_comparison(trend_data):
         )
     )
     
+    fig = apply_professional_theme_to_figure(fig, theme='light')
+    
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -296,7 +283,7 @@ def main():
     """Main application function"""
     
     # Title
-    st.title("💰 Financial Dashboard")
+    st.title(f"💰 {t('finance.title')}")
     
     # Initialize database
     db = get_database()
@@ -309,13 +296,13 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.header("💳 Transaction Management")
+        st.header(f"💳 {t('finance.transaction_management')}")
         
         # 添加/编辑模式
         if 'edit_transaction_id' not in st.session_state:
             st.session_state.edit_transaction_id = None
         
-        mode = "Edit Transaction" if st.session_state.edit_transaction_id else "Record Transaction"
+        mode = t('finance.edit_transaction') if st.session_state.edit_transaction_id else t('finance.record_transaction')
         st.subheader(mode)
         
         # 如果是编辑模式，加载现有数据
@@ -336,7 +323,7 @@ def main():
                 type_index = 0 if transaction.transaction_type == TransactionType.INCOME else 1
             
             transaction_type = st.radio(
-                "Type*",
+                f"{t('finance.transaction_type')}*",
                 type_options,
                 horizontal=True,
                 index=type_index
@@ -348,22 +335,40 @@ def main():
                 default_date = transaction.transaction_date
             
             transaction_date = st.date_input(
-                "Date*",
+                f"{t('finance.transaction_date')}*",
                 value=default_date
             )
             
             # Category选项
-            category_options = ["Rental Income", "Construction Cost", "Land Acquisition", 
-                               "Professional Fees", "Financing", "Maintenance", "Other"]
+            category_options = [
+                t('finance.categories.rental_income'),
+                t('finance.categories.construction_cost'),
+                t('finance.categories.land_acquisition'),
+                t('finance.categories.professional_fees'),
+                t('finance.categories.financing'),
+                t('finance.categories.maintenance'),
+                t('finance.categories.other')
+            ]
             category_index = 0
             if editing and transaction and transaction.category:
                 try:
-                    category_index = category_options.index(transaction.category)
+                    # Map category to translation key
+                    category_map = {
+                        "Rental Income": t('finance.categories.rental_income'),
+                        "Construction Cost": t('finance.categories.construction_cost'),
+                        "Land Acquisition": t('finance.categories.land_acquisition'),
+                        "Professional Fees": t('finance.categories.professional_fees'),
+                        "Financing": t('finance.categories.financing'),
+                        "Maintenance": t('finance.categories.maintenance'),
+                        "Other": t('finance.categories.other')
+                    }
+                    if transaction.category in category_map:
+                        category_index = category_options.index(category_map[transaction.category])
                 except ValueError:
                     category_index = 0
             
             category = st.selectbox(
-                "Category*",
+                f"{t('finance.category')}*",
                 category_options,
                 index=category_index
             )
@@ -374,7 +379,7 @@ def main():
                 default_amount = abs(float(transaction.amount))
             
             amount = st.number_input(
-                "Amount (AUD)*",
+                f"{t('common.amount')} (AUD)*",
                 min_value=0.0,
                 step=1000.0,
                 format="%.2f",
@@ -396,7 +401,7 @@ def main():
                     asset_index = 0
             
             asset_id = st.selectbox(
-                "Related Asset",
+                t('finance.related_asset'),
                 asset_options,
                 index=asset_index
             )
@@ -407,7 +412,7 @@ def main():
                 default_description = transaction.description or ""
             
             description = st.text_area(
-                "Description*",
+                f"{t('common.description')}*",
                 placeholder="Payment for Q4 rent, Invoice #1234, etc.",
                 value=default_description
             )
@@ -415,16 +420,16 @@ def main():
             # 按钮
             col1, col2 = st.columns(2)
             with col1:
-                submitted = st.form_submit_button("💾 Save", use_container_width=True)
+                submitted = st.form_submit_button(f"💾 {t('common.save')}", use_container_width=True)
             with col2:
-                cancelled = st.form_submit_button("❌ Cancel", use_container_width=True)
+                cancelled = st.form_submit_button(f"❌ {t('common.cancel')}", use_container_width=True)
             
             if submitted:
                 # 验证
                 if amount <= 0:
-                    st.error("Amount must be positive")
+                    st.error(f"{t('common.amount')} {t('validation.positive_number')}")
                 elif not description:
-                    st.error("Description is required")
+                    st.error(f"{t('common.description')} {t('validation.required')}")
                 else:
                     # 准备数据
                     # Expense金额存为负数
@@ -448,23 +453,23 @@ def main():
                     try:
                         if st.session_state.edit_transaction_id:
                             db.update_transaction(st.session_state.edit_transaction_id, transaction_data)
-                            st.success("✅ Transaction updated!")
+                            st.success(f"✅ {t('finance.transaction_saved')}")
                         else:
                             db.add_transaction(transaction_data)
-                            st.success(f"✅ {transaction_type} of ${amount:,.2f} recorded!")
+                            st.success(f"✅ {t('finance.transaction_saved')}")
                         
                         st.session_state.edit_transaction_id = None
                         time.sleep(1)
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        st.error(f"{t('messages.error_occurred')}: {e}")
             
             if cancelled:
                 st.session_state.edit_transaction_id = None
                 st.rerun()
         
         st.markdown("---")
-        st.header("🔍 Filters")
+        st.header(f"🔍 {t('common.filter')}")
         months = st.selectbox(
             "Time Range",
             options=[1, 3, 6, 12],
@@ -476,8 +481,9 @@ def main():
         st.markdown(f"{now.strftime('%d %b %Y, %H:%M')}")
     
     # Top metrics cards
+    st.markdown('<div style="margin-bottom: 2rem;">', unsafe_allow_html=True)
     st.markdown("---")
-    st.markdown("### 📊 Financial Overview")
+    st.markdown(f"### 📊 {t('finance.title')}")
     
     col1, col2, col3, col4 = st.columns(4)
     
@@ -485,37 +491,37 @@ def main():
         try:
             balance = db.get_cash_balance()
             st.metric(
-                label="Cash Balance",
+                label=t('home.cash_balance'),
                 value=format_currency_millions(balance),
                 help="Total cash balance from all transactions"
             )
         except Exception as e:
             st.error(f"Error loading cash balance: {e}")
-            st.metric(label="Cash Balance", value="$0.0M")
+            st.metric(label=t('home.cash_balance'), value="$0.0M")
     
     with col2:
         try:
             income = db.get_monthly_income(now.year, now.month)
             st.metric(
-                label="This Month Income",
+                label=t('finance.this_month_income'),
                 value=format_currency_millions(income),
                 help=f"Total income for {now.strftime('%B %Y')}"
             )
         except Exception as e:
             st.error(f"Error loading monthly income: {e}")
-            st.metric(label="This Month Income", value="$0.0M")
+            st.metric(label=t('finance.this_month_income'), value="$0.0M")
     
     with col3:
         try:
             expense = db.get_monthly_expense(now.year, now.month)
             st.metric(
-                label="This Month Expense",
+                label=t('finance.this_month_expense'),
                 value=format_currency_millions(expense),
                 help=f"Total expenses for {now.strftime('%B %Y')}"
             )
         except Exception as e:
             st.error(f"Error loading monthly expense: {e}")
-            st.metric(label="This Month Expense", value="$0.0M")
+            st.metric(label=t('finance.this_month_expense'), value="$0.0M")
     
     with col4:
         try:
@@ -525,7 +531,7 @@ def main():
             delta = format_currency_millions(abs(net_cashflow)) if net_cashflow != 0 else None
             delta_color = "normal" if net_cashflow >= 0 else "inverse"
             st.metric(
-                label="Net Cashflow",
+                label=t('finance.net_cashflow'),
                 value=format_currency_millions(net_cashflow),
                 delta=delta if net_cashflow < 0 else None,
                 delta_color=delta_color,
@@ -533,18 +539,19 @@ def main():
             )
         except Exception as e:
             st.error(f"Error calculating net cashflow: {e}")
-            st.metric(label="Net Cashflow", value="$0.0M")
+            st.metric(label=t('finance.net_cashflow'), value="$0.0M")
     
-    st.markdown("---")
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
     
     # Cashflow trend chart
-    st.subheader("📈 Cash Flow Trend")
+    st.subheader(f"📈 {t('finance.cash_flow_trend')}")
     try:
-        with st.spinner("Loading cashflow trend data..."):
+        with st.spinner(t('common.loading')):
             trend_data = db.get_cashflow_trend(months=months)
             display_cashflow_trend_chart(trend_data, months)
     except Exception as e:
-        st.error(f"Error loading cashflow trend: {e}")
+        st.error(f"{t('messages.error_occurred')}: {e}")
         import traceback
         with st.expander("Show Error Details"):
             st.code(traceback.format_exc())
@@ -552,7 +559,7 @@ def main():
     st.markdown("---")
     
     # Income vs Expense comparison
-    st.subheader("📊 Income vs Expense Comparison")
+    st.subheader(f"📊 {t('finance.income_vs_expense_comparison')}")
     try:
         with st.spinner("Loading comparison data..."):
             trend_data = db.get_cashflow_trend(months=months)
@@ -566,14 +573,14 @@ def main():
     st.markdown("---")
     
     # Recent transactions table
-    st.subheader("💳 Recent Transactions")
+    st.subheader(f"💳 {t('finance.recent_transactions')}")
     try:
-        with st.spinner("Loading recent transactions..."):
+        with st.spinner(t('common.loading')):
             # Get more transactions for pagination (limit increased to support pagination)
             transactions = db.get_recent_transactions(limit=200)
             
             if not transactions:
-                st.info("No transactions yet. Add your first transaction using the form on the left.")
+                st.info(t('common.no_data'))
             else:
                 # Pagination
                 items_per_page = 20

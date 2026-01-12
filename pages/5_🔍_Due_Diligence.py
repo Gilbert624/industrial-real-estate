@@ -3,12 +3,18 @@ import plotly.graph_objects as go
 from models.database import DatabaseManager
 from datetime import datetime
 import pandas as pd
+from config.theme import generate_css
+from utils.chart_styles import get_chart_layout, apply_professional_theme_to_figure, CHART_COLORS
+from config.i18n import t, get_current_language
 
 # 页面配置
 st.set_page_config(page_title="Due Diligence", page_icon="🔍", layout="wide")
 
-st.title("🔍 Due Diligence & Investment Analysis")
-st.write("Evaluate new investment opportunities with comprehensive financial modeling")
+# 应用专业主题
+st.markdown(generate_css('light'), unsafe_allow_html=True)
+
+st.title(f"🔍 {t('dd.title')}")
+st.write(t('dd.subtitle'))
 
 # 初始化
 db = DatabaseManager()
@@ -29,7 +35,7 @@ with col1:
         project_options["+ Create New Project"] = None
         
         selected = st.selectbox(
-            "Select Project to Analyze:",
+            t('dd.select_project'),
             options=list(project_options.keys()),
             index=0
         )
@@ -45,11 +51,11 @@ with col1:
         st.session_state.selected_dd_project = None
 
 with col2:
-    if st.button("🗑️ Delete Project", use_container_width=True, disabled=not st.session_state.selected_dd_project):
+    if st.button(f"🗑️ {t('dd.delete_project')}", use_container_width=True, disabled=not st.session_state.selected_dd_project):
         if st.session_state.selected_dd_project:
             db.delete_dd_project(st.session_state.selected_dd_project)
             st.session_state.selected_dd_project = None
-            st.success("Project deleted!")
+            st.success(f"✅ {t('messages.delete_success')}")
             st.rerun()
 
 st.write("---")
@@ -64,45 +70,51 @@ if st.session_state.selected_dd_project:
         st.stop()
     
     # 创建tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["📝 Parameters", "📊 Financial Model", "📈 Scenarios", "📄 Report"])
+    tab1, tab2, tab3, tab4 = st.tabs([
+        f"📝 {t('dd.tabs.parameters')}",
+        f"📊 {t('dd.tabs.financial_model')}",
+        f"📈 {t('dd.tabs.scenarios')}",
+        f"📄 {t('dd.tabs.report')}"
+    ])
     
     # ===== Tab 1: Parameters =====
     with tab1:
-        st.subheader("Project Parameters")
+        st.markdown('<div class="bento-card" style="margin: 1rem 0;">', unsafe_allow_html=True)
+        st.subheader(f"{t('dd.tabs.parameters')}")
         
         with st.form("dd_parameters_form"):
             # 基本信息
-            st.write("**Basic Information**")
+            st.write(f"**{t('dd.parameters.basic_info')}**")
             col1, col2 = st.columns(2)
             
             with col1:
-                name = st.text_input("Project Name*", value=project.name)
-                location = st.text_input("Location", value=project.location or "")
+                name = st.text_input(f"{t('dd.parameters.project_name')}*", value=project.name)
+                location = st.text_input(t('dd.parameters.location'), value=project.location or "")
                 property_type = st.selectbox(
-                    "Property Type",
-                    ["Industrial Warehouse", "Land Development", "Mixed Use", "Logistics Center"],
-                    index=["Industrial Warehouse", "Land Development", "Mixed Use", "Logistics Center"].index(project.property_type) if project.property_type else 0
+                    t('dd.parameters.property_type'),
+                    [t('dd.property_types.industrial_warehouse'), t('dd.property_types.land_development'), t('dd.property_types.mixed_use'), t('dd.property_types.logistics_center')],
+                    index=0
                 )
             
             with col2:
                 status = st.selectbox(
-                    "Status",
-                    ["Under Review", "Approved", "Rejected", "On Hold"],
-                    index=["Under Review", "Approved", "Rejected", "On Hold"].index(project.status) if project.status else 0
+                    t('common.status'),
+                    [t('dd.status_options.under_review'), t('dd.status_options.approved'), t('dd.status_options.rejected'), t('dd.status_options.on_hold')],
+                    index=0
                 )
-                zoning = st.text_input("Zoning", value=project.zoning or "")
+                zoning = st.text_input(t('dd.parameters.zoning'), value=project.zoning or "")
             
-            description = st.text_area("Description", value=project.description or "", height=80)
+            description = st.text_area(t('common.description'), value=project.description or "", height=80)
             
             st.write("---")
             
             # 土地和建筑
-            st.write("**Land & Building**")
+            st.write(f"**{t('dd.parameters.land_building')}**")
             col1, col2 = st.columns(2)
             
             with col1:
                 land_area = st.number_input(
-                    "Land Area (sqm)",
+                    t('dd.parameters.land_area'),
                     min_value=0.0,
                     value=float(project.land_area_sqm or 0),
                     step=100.0
@@ -110,7 +122,7 @@ if st.session_state.selected_dd_project:
             
             with col2:
                 building_area = st.number_input(
-                    "Building Area (sqm)",
+                    t('dd.parameters.building_area'),
                     min_value=0.0,
                     value=float(project.building_area_sqm or 0),
                     step=100.0
@@ -119,12 +131,12 @@ if st.session_state.selected_dd_project:
             st.write("---")
             
             # 收购成本
-            st.write("**Acquisition**")
+            st.write(f"**{t('dd.parameters.acquisition')}**")
             col1, col2 = st.columns(2)
             
             with col1:
                 purchase_price = st.number_input(
-                    "Purchase Price (AUD)",
+                    f"{t('dd.parameters.purchase_price')} (AUD)",
                     min_value=0.0,
                     value=float(project.purchase_price or 0),
                     step=100000.0,
@@ -134,7 +146,7 @@ if st.session_state.selected_dd_project:
             
             with col2:
                 acquisition_costs = st.number_input(
-                    "Acquisition Costs (AUD)",
+                    f"{t('dd.parameters.acquisition_costs')} (AUD)",
                     min_value=0.0,
                     value=float(project.acquisition_costs or 0),
                     step=10000.0,
@@ -145,12 +157,12 @@ if st.session_state.selected_dd_project:
             st.write("---")
             
             # 开发成本
-            st.write("**Development**")
+            st.write(f"**{t('dd.parameters.development')}**")
             col1, col2 = st.columns(2)
             
             with col1:
                 construction_cost = st.number_input(
-                    "Construction Cost (AUD)",
+                    f"{t('dd.parameters.construction_cost')} (AUD)",
                     min_value=0.0,
                     value=float(project.construction_cost or 0),
                     step=100000.0,
@@ -158,7 +170,7 @@ if st.session_state.selected_dd_project:
                 )
                 
                 construction_duration = st.number_input(
-                    "Construction Duration (months)",
+                    t('dd.parameters.construction_duration'),
                     min_value=1,
                     value=int(project.construction_duration_months or 12),
                     step=1
@@ -166,7 +178,7 @@ if st.session_state.selected_dd_project:
             
             with col2:
                 contingency = st.number_input(
-                    "Contingency (%)",
+                    t('dd.parameters.contingency'),
                     min_value=0.0,
                     max_value=30.0,
                     value=float(project.contingency_percentage or 10),
@@ -177,12 +189,12 @@ if st.session_state.selected_dd_project:
             st.write("---")
             
             # 融资结构
-            st.write("**Financing Structure**")
+            st.write(f"**{t('dd.parameters.financing')}**")
             col1, col2, col3 = st.columns(3)
             
             with col1:
                 equity_pct = st.number_input(
-                    "Equity (%)",
+                    t('dd.parameters.equity'),
                     min_value=0.0,
                     max_value=100.0,
                     value=float(project.equity_percentage or 30),
@@ -191,7 +203,7 @@ if st.session_state.selected_dd_project:
             
             with col2:
                 debt_pct = st.number_input(
-                    "Debt (%)",
+                    t('dd.parameters.debt'),
                     min_value=0.0,
                     max_value=100.0,
                     value=float(project.debt_percentage or 70),
@@ -204,7 +216,7 @@ if st.session_state.selected_dd_project:
             
             with col3:
                 interest_rate = st.number_input(
-                    "Interest Rate (%)",
+                    t('dd.parameters.interest_rate'),
                     min_value=0.0,
                     max_value=20.0,
                     value=float(project.interest_rate or 6.0),
@@ -212,7 +224,7 @@ if st.session_state.selected_dd_project:
                 )
             
             loan_term = st.number_input(
-                "Loan Term (years)",
+                t('dd.parameters.loan_term'),
                 min_value=1,
                 max_value=30,
                 value=int(project.loan_term_years or 25),
@@ -222,12 +234,12 @@ if st.session_state.selected_dd_project:
             st.write("---")
             
             # 收入假设
-            st.write("**Revenue Assumptions**")
+            st.write(f"**{t('dd.parameters.revenue')}**")
             col1, col2 = st.columns(2)
             
             with col1:
                 monthly_rent = st.number_input(
-                    "Estimated Monthly Rent (AUD)",
+                    f"{t('dd.parameters.monthly_rent')} (AUD)",
                     min_value=0.0,
                     value=float(project.estimated_monthly_rent or 0),
                     step=5000.0,
@@ -235,7 +247,7 @@ if st.session_state.selected_dd_project:
                 )
                 
                 rent_growth = st.number_input(
-                    "Rent Growth Rate (% p.a.)",
+                    t('dd.parameters.rent_growth'),
                     min_value=0.0,
                     max_value=20.0,
                     value=float(project.rent_growth_rate or 3.0),
@@ -244,7 +256,7 @@ if st.session_state.selected_dd_project:
             
             with col2:
                 occupancy = st.number_input(
-                    "Occupancy Rate (%)",
+                    t('dd.parameters.occupancy_rate'),
                     min_value=0.0,
                     max_value=100.0,
                     value=float(project.occupancy_rate or 95.0),
@@ -252,7 +264,7 @@ if st.session_state.selected_dd_project:
                 )
                 
                 opex_ratio = st.number_input(
-                    "Operating Expense Ratio (%)",
+                    t('dd.parameters.opex_ratio'),
                     min_value=0.0,
                     max_value=100.0,
                     value=float(project.operating_expense_ratio or 30.0),
@@ -263,12 +275,12 @@ if st.session_state.selected_dd_project:
             st.write("---")
             
             # 退出策略
-            st.write("**Exit Strategy**")
+            st.write(f"**{t('dd.parameters.exit_strategy')}**")
             col1, col2 = st.columns(2)
             
             with col1:
                 holding_period = st.number_input(
-                    "Holding Period (years)",
+                    t('dd.parameters.holding_period'),
                     min_value=1,
                     max_value=30,
                     value=int(project.holding_period_years or 10),
@@ -277,7 +289,7 @@ if st.session_state.selected_dd_project:
             
             with col2:
                 exit_cap_rate = st.number_input(
-                    "Exit Cap Rate (%)",
+                    t('dd.parameters.exit_cap_rate'),
                     min_value=0.0,
                     max_value=20.0,
                     value=float(project.exit_cap_rate or 6.5),
@@ -288,14 +300,14 @@ if st.session_state.selected_dd_project:
             # 提交按钮
             col1, col2 = st.columns(2)
             with col1:
-                submitted = st.form_submit_button("💾 Save Parameters", use_container_width=True)
+                submitted = st.form_submit_button(f"💾 {t('dd.parameters.save_parameters')}", use_container_width=True)
             with col2:
-                calculate = st.form_submit_button("🧮 Calculate Returns", use_container_width=True, type="primary")
+                calculate = st.form_submit_button(f"🧮 {t('dd.parameters.calculate_returns')}", use_container_width=True, type="primary")
             
             if submitted or calculate:
                 # 验证
                 if not name:
-                    st.error("Project name is required")
+                    st.error(f"{t('dd.parameters.project_name')} {t('validation.required')}")
                 elif equity_pct + debt_pct != 100:
                     st.error("Equity + Debt must equal 100%")
                 else:
@@ -328,17 +340,20 @@ if st.session_state.selected_dd_project:
                     
                     try:
                         db.update_dd_project(project.id, update_data)
-                        st.success("✅ Parameters saved!")
+                        st.success(f"✅ {t('messages.save_success')}")
                         
                         if calculate:
                             st.info("🧮 Financial calculations will be implemented in Day 8")
                         
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        st.error(f"{t('messages.error_occurred')}: {e}")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
     
     # ===== Tab 2: Financial Model =====
     with tab2:
+        st.markdown('<div class="bento-card" style="margin: 1rem 0;">', unsafe_allow_html=True)
         st.subheader("📊 Financial Model & Returns")
         
         # 检查是否所有必需参数都已填写
@@ -487,6 +502,8 @@ if st.session_state.selected_dd_project:
                     height=400
                 )
                 
+                fig_pie = apply_professional_theme_to_figure(fig_pie, theme='light')
+                
                 col1, col2 = st.columns([1, 1])
                 
                 with col1:
@@ -553,6 +570,8 @@ if st.session_state.selected_dd_project:
                         hovermode='x unified',
                         height=400
                     )
+                    
+                    fig_draws = apply_professional_theme_to_figure(fig_draws, theme='light')
                     
                     st.plotly_chart(fig_draws, use_container_width=True)
                     
@@ -634,6 +653,8 @@ if st.session_state.selected_dd_project:
                     height=450
                 )
                 
+                fig_cf = apply_professional_theme_to_figure(fig_cf, theme='light')
+                
                 st.plotly_chart(fig_cf, use_container_width=True)
                 
                 # ========== 累计现金流 ==========
@@ -662,6 +683,8 @@ if st.session_state.selected_dd_project:
                     hovermode='x unified',
                     height=400
                 )
+                
+                fig_cumulative = apply_professional_theme_to_figure(fig_cumulative, theme='light')
                 
                 st.plotly_chart(fig_cumulative, use_container_width=True)
                 
@@ -720,9 +743,12 @@ if st.session_state.selected_dd_project:
                 import traceback
                 with st.expander("🔍 Error Details"):
                     st.code(traceback.format_exc())
+        
+        st.markdown('</div>', unsafe_allow_html=True)
     
     # ===== Tab 3: Scenarios =====
     with tab3:
+        st.markdown('<div class="bento-card" style="margin: 1rem 0;">', unsafe_allow_html=True)
         st.subheader("📈 Scenario & Sensitivity Analysis")
         
         # 检查参数
@@ -860,6 +886,8 @@ if st.session_state.selected_dd_project:
                     height=500
                 )
                 
+                fig_radar = apply_professional_theme_to_figure(fig_radar, theme='light')
+                
                 st.plotly_chart(fig_radar, use_container_width=True)
                 
                 st.write("---")
@@ -947,6 +975,8 @@ if st.session_state.selected_dd_project:
                         height=400
                     )
                     
+                    fig_sens = apply_professional_theme_to_figure(fig_sens, theme='light')
+                    
                     st.plotly_chart(fig_sens, use_container_width=True)
                     
                     # 显示关键洞察
@@ -1023,6 +1053,8 @@ if st.session_state.selected_dd_project:
                         showlegend=True
                     )
                     
+                    fig_tornado = apply_professional_theme_to_figure(fig_tornado, theme='light')
+                    
                     st.plotly_chart(fig_tornado, use_container_width=True)
                     
                     # 显示排名表
@@ -1054,9 +1086,12 @@ if st.session_state.selected_dd_project:
                 import traceback
                 with st.expander("🔍 Error Details"):
                     st.code(traceback.format_exc())
+        
+        st.markdown('</div>', unsafe_allow_html=True)
     
     # ===== Tab 4: Report =====
     with tab4:
+        st.markdown('<div class="bento-card" style="margin: 1rem 0;">', unsafe_allow_html=True)
         st.subheader("📄 Investment Decision Report")
         
         # 检查参数
@@ -1283,6 +1318,8 @@ if st.session_state.selected_dd_project:
                 import traceback
                 with st.expander("🔍 Error Details"):
                     st.code(traceback.format_exc())
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
 else:
     # 创建新项目

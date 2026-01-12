@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 import json
 import re
+from config.theme import generate_css
+from config.i18n import t, get_current_language
 
 # Page configuration
 st.set_page_config(
@@ -20,28 +22,8 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS for professional styling
-st.markdown("""
-    <style>
-    .main {
-        background-color: #f8f9fa;
-    }
-    .stMetric {
-        background-color: white;
-        padding: 15px;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    h1 {
-        color: #1e3a5f;
-        font-weight: 600;
-    }
-    h2, h3 {
-        color: #2c5282;
-        font-weight: 500;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# 应用专业主题
+st.markdown(generate_css('light'), unsafe_allow_html=True)
 
 
 @st.cache_resource
@@ -124,7 +106,7 @@ def main():
     """Main application function"""
     
     # Title
-    st.title("🏗️ Project Management")
+    st.title(f"🏗️ {t('projects.title')}")
     
     # Initialize database
     db = get_database()
@@ -137,6 +119,7 @@ def main():
         st.session_state.edit_project_id = None
     
     # ==================== Top Key Metrics ====================
+    st.markdown('<div style="margin-bottom: 2rem;">', unsafe_allow_html=True)
     col1, col2, col3, col4 = st.columns(4)
     
     try:
@@ -147,21 +130,21 @@ def main():
         
         with col1:
             st.metric(
-                "Active Projects",
+                t('home.active_projects'),
                 active_count,
                 help="Projects not yet completed"
             )
         
         with col2:
             st.metric(
-                "Total Budget",
+                t('projects.total_budget'),
                 f"${total_budget/1e6:.1f}M",
                 help="Sum of all project budgets"
             )
         
         with col3:
             st.metric(
-                "Total Cost",
+                t('projects.total_cost'),
                 f"${total_cost/1e6:.1f}M",
                 delta=f"${(total_budget - total_cost)/1e6:+.1f}M",
                 delta_color="normal",
@@ -170,21 +153,22 @@ def main():
         
         with col4:
             st.metric(
-                "Avg Completion",
+                t('projects.avg_completion'),
                 f"{avg_completion:.0f}%",
                 help="Average progress across all projects"
             )
     except Exception as e:
         st.error(f"Error loading metrics: {e}")
     
-    st.write("---")
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
     
     # ==================== Sidebar - Project Form ====================
     with st.sidebar:
-        st.header("Project Management")
+        st.header(t('projects.project_management'))
         
         # Determine mode (add or edit)
-        mode = "Edit Project" if st.session_state.edit_project_id else "Add New Project"
+        mode = t('projects.edit_project') if st.session_state.edit_project_id else t('projects.add_new_project')
         st.subheader(mode)
         
         # Load existing data if in edit mode
@@ -214,7 +198,7 @@ def main():
         with st.form("project_form"):
             # Project name
             name = st.text_input(
-                "Project Name*",
+                f"{t('projects.project_name')}*",
                 value=project.project_name if project else "",
                 help="Full name of the development project"
             )
@@ -222,15 +206,30 @@ def main():
             # Status and Type
             col1, col2 = st.columns(2)
             with col1:
-                status_options = ["Planning", "Approved", "Construction", "Completed", "On Hold"]
+                status_options = [
+                    t('projects.project_status.planning'),
+                    t('projects.project_status.approved'),
+                    t('projects.project_status.construction'),
+                    t('projects.project_status.completed'),
+                    t('projects.project_status.on_hold')
+                ]
                 if project:
                     current_status_display = status_to_display(project.status)
-                    status_index = status_options.index(current_status_display) if current_status_display in status_options else 0
+                    # Map enum to translation
+                    status_map = {
+                        "Planning": t('projects.project_status.planning'),
+                        "Approved": t('projects.project_status.approved'),
+                        "Construction": t('projects.project_status.construction'),
+                        "Completed": t('projects.project_status.completed'),
+                        "On Hold": t('projects.project_status.on_hold')
+                    }
+                    current_status_translated = status_map.get(current_status_display, status_options[0])
+                    status_index = status_options.index(current_status_translated) if current_status_translated in status_options else 0
                 else:
                     status_index = 2  # Default to Construction
                 
                 status = st.selectbox(
-                    "Status*",
+                    f"{t('common.status')}*",
                     status_options,
                     index=status_index
                 )
@@ -244,7 +243,7 @@ def main():
                     asset_index = 0
                 
                 selected_asset = st.selectbox(
-                    "Related Asset*",
+                    f"{t('finance.related_asset')}*",
                     asset_options,
                     index=asset_index,
                     help="Select the asset this project is associated with"
@@ -256,7 +255,7 @@ def main():
                 location_value = project.asset.region or project.asset.suburb or ""
             
             location = st.text_input(
-                "Location",
+                t('projects.location'),
                 value=location_value,
                 placeholder="Brisbane, Sunshine Coast, etc.",
                 help="Project location (usually from asset)"
@@ -269,7 +268,7 @@ def main():
                 completion = 0
             
             completion = st.slider(
-                "Completion %",
+                f"{t('projects.completion')} %",
                 0, 100,
                 completion,
                 help="Current progress percentage"
@@ -279,7 +278,7 @@ def main():
             col3, col4 = st.columns(2)
             with col3:
                 budget = st.number_input(
-                    "Budget (AUD)*",
+                    f"{t('projects.budget')} (AUD)*",
                     min_value=0.0,
                     step=100000.0,
                     value=float(project.total_budget) if project and project.total_budget else 0.0,
@@ -292,7 +291,7 @@ def main():
                     land_area_val = float(project.asset.land_area_sqm)
                 
                 land_area = st.number_input(
-                    "Land Area (sqm)",
+                    t('assets.land_area'),
                     min_value=0.0,
                     value=land_area_val,
                     help="Land area (from associated asset)"
@@ -300,7 +299,7 @@ def main():
             
             with col4:
                 actual_cost = st.number_input(
-                    "Actual Cost (AUD)",
+                    f"{t('projects.actual_cost')} (AUD)",
                     min_value=0.0,
                     step=100000.0,
                     value=float(project.actual_cost) if project and project.actual_cost else 0.0,
@@ -313,7 +312,7 @@ def main():
                     building_area_val = float(project.asset.building_area_sqm)
                 
                 building_area = st.number_input(
-                    "Building Area (sqm)",
+                    t('assets.building_area'),
                     min_value=0.0,
                     value=building_area_val,
                     help="Building area (from associated asset)"
@@ -323,13 +322,13 @@ def main():
             col5, col6 = st.columns(2)
             with col5:
                 start_date = st.date_input(
-                    "Start Date",
+                    t('projects.start_date'),
                     value=project.planned_start_date if project and project.planned_start_date else datetime.now().date()
                 )
             
             with col6:
                 expected_completion = st.date_input(
-                    "Expected Completion",
+                    t('projects.expected_completion'),
                     value=project.planned_completion_date if project and project.planned_completion_date else (datetime.now() + timedelta(days=180)).date()
                 )
             
@@ -349,7 +348,7 @@ def main():
             
             # Description
             description = st.text_area(
-                "Description",
+                t('common.description'),
                 value=project.description if project and project.description else "",
                 placeholder="Project details, key features, etc.",
                 height=100
@@ -358,21 +357,21 @@ def main():
             # Buttons
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
-                submitted = st.form_submit_button("💾 Save", use_container_width=True)
+                submitted = st.form_submit_button(f"💾 {t('common.save')}", use_container_width=True)
             with col_btn2:
-                cancelled = st.form_submit_button("❌ Cancel", use_container_width=True)
+                cancelled = st.form_submit_button(f"❌ {t('common.cancel')}", use_container_width=True)
             
             # Handle submission
             if submitted:
                 # Validation
                 if not name:
-                    st.error("❌ Project name is required")
+                    st.error(f"❌ {t('projects.project_name')} {t('validation.required')}")
                 elif budget <= 0:
-                    st.error("❌ Budget must be positive")
+                    st.error(f"❌ {t('projects.budget')} {t('validation.positive_number')}")
                 elif start_date > expected_completion:
-                    st.error("❌ Start date cannot be after completion date")
+                    st.error(f"❌ {t('validation.start_before_end')}")
                 elif selected_asset == "None":
-                    st.error("❌ Related asset is required")
+                    st.error(f"❌ {t('finance.related_asset')} {t('validation.required')}")
                 else:
                     # Prepare data
                     # Store completion_percentage in notes field
@@ -402,16 +401,16 @@ def main():
                         if st.session_state.edit_project_id:
                             # Update
                             db.update_project(st.session_state.edit_project_id, project_data)
-                            st.success("✅ Project updated successfully!")
+                            st.success(f"✅ {t('projects.project_saved')}")
                         else:
                             # Add
                             db.add_project(project_data)
-                            st.success("✅ Project added successfully!")
+                            st.success(f"✅ {t('projects.project_saved')}")
                         
                         st.session_state.edit_project_id = None
                         st.rerun()
                     except Exception as e:
-                        st.error(f"❌ Error: {e}")
+                        st.error(f"❌ {t('messages.error_occurred')}: {e}")
             
             # Handle cancel
             if cancelled:
@@ -419,12 +418,12 @@ def main():
                 st.rerun()
     
     # ==================== Main Area - Project List ====================
-    st.subheader("📋 All Projects")
+    st.subheader(f"📋 {t('projects.title')}")
     
     # Status filter
     status_filter = st.selectbox(
-        "Filter by Status",
-        ["All", "Planning", "Approved", "Construction", "Completed", "On Hold"],
+        f"{t('common.filter')} {t('common.by')} {t('common.status')}",
+        [t('assets.all'), t('projects.project_status.planning'), t('projects.project_status.approved'), t('projects.project_status.construction'), t('projects.project_status.completed'), t('projects.project_status.on_hold')],
         help="Filter projects by their current status"
     )
     
@@ -594,7 +593,7 @@ def main():
                 st.write("---")
         
         else:
-            st.info("📭 No projects found. Add your first project using the form on the left.")
+            st.info(f"📭 {t('messages.no_results')}")
     
     except Exception as e:
         st.error(f"❌ Error loading projects: {e}")
