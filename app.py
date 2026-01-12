@@ -30,13 +30,30 @@ get_current_language = get_language
 try:
     from models.database import (
         DatabaseManager, Asset, Project, Transaction, RentalIncome,
-        AssetType, AssetStatus, ProjectStatus, TransactionType
+        AssetType, AssetStatus, ProjectStatus, TransactionType, Base
     )
+    from sqlalchemy import create_engine
     DB_AVAILABLE = True
 except ImportError as e:
     st.error(f"⚠️ Database models not found: {e}")
     st.info("Please ensure the 'models' package is in the same directory as app.py")
     DB_AVAILABLE = False
+
+# Initialize database
+@st.cache_resource
+def init_database():
+    """Initialize database and create all tables"""
+    db = DatabaseManager()
+    try:
+        # 创建所有表
+        Base.metadata.create_all(db.engine)
+        return db
+    except Exception as e:
+        st.error(f"Database initialization failed: {e}")
+        return DatabaseManager()
+
+# 获取数据库实例
+db = init_database()
 
 # Page configuration
 st.set_page_config(
@@ -149,12 +166,12 @@ def get_recent_transactions(session, limit=5):
 
 
 @st.cache_data(ttl=3600)
-def get_portfolio_trend(session, months=6):
+def get_portfolio_trend(_session, months=6):
     """获取投资组合趋势数据
     缓存1小时，趋势数据变化较慢
     """
     try:
-        assets = session.query(Asset).all()
+        assets = _session.query(Asset).all()
         total_current_value = sum(float(a.current_valuation or 0) for a in assets)
         
         dates = []
