@@ -70,7 +70,7 @@ def get_database_connection():
 
 
 @st.cache_data(ttl=3600)
-def get_portfolio_metrics(session):
+def get_portfolio_metrics(_session):
     """
     Calculate portfolio metrics from database
     缓存1小时，减少数据库查询频率
@@ -80,15 +80,15 @@ def get_portfolio_metrics(session):
     """
     try:
         # Total number of assets
-        total_assets = session.query(func.count(Asset.id)).scalar() or 0
+        total_assets = _session.query(func.count(Asset.id)).scalar() or 0
         
         # Total portfolio valuation
-        total_valuation = session.query(
+        total_valuation = _session.query(
             func.sum(Asset.current_valuation)
         ).scalar() or 0
         
         # Previous valuation (using purchase price as proxy for change calculation)
-        previous_valuation = session.query(
+        previous_valuation = _session.query(
             func.sum(Asset.purchase_price)
         ).scalar() or 0
         
@@ -96,13 +96,13 @@ def get_portfolio_metrics(session):
         valuation_change = total_valuation - previous_valuation if previous_valuation else 0
         
         # Active projects (not completed or cancelled)
-        active_projects = session.query(func.count(Project.id)).filter(
+        active_projects = _session.query(func.count(Project.id)).filter(
             Project.is_active == True,
             Project.status.notin_([ProjectStatus.COMPLETED, ProjectStatus.CANCELLED])
         ).scalar() or 0
         
         # Total projects for change calculation
-        total_projects = session.query(func.count(Project.id)).scalar() or 0
+        total_projects = _session.query(func.count(Project.id)).scalar() or 0
         
         return {
             'total_assets': total_assets,
