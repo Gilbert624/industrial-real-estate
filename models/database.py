@@ -19,6 +19,7 @@ from sqlalchemy.orm import relationship, sessionmaker, joinedload
 import enum
 import logging
 import hashlib
+import os
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -659,15 +660,36 @@ class DatabaseManager:
     Database Manager for easy database operations
     """
     
-    def __init__(self, database_url='sqlite:///industrial_real_estate.db'):
+    def __init__(self, db_path=None):
         """
-        Initialize database connection
+        Initialize database manager
         
         Args:
-            database_url: SQLAlchemy database URL (default: SQLite)
+            db_path: Path to database file or SQLAlchemy URL (default: from DATABASE_PATH env var or 'industrial_real_estate.db')
+                     If None, uses DATABASE_PATH env var or defaults to 'industrial_real_estate.db'
+                     If starts with 'sqlite:///', uses as-is; otherwise treats as file path
         """
+        if db_path is None:
+            db_path = os.getenv('DATABASE_PATH', 'industrial_real_estate.db')
+        
+        # Handle both file paths and full SQLAlchemy URLs for backward compatibility
+        if db_path.startswith('sqlite:///'):
+            database_url = db_path
+            # Extract actual file path for self.db_path
+            self.db_path = db_path.replace('sqlite:///', '')
+        else:
+            database_url = f'sqlite:///{db_path}'
+            self.db_path = db_path
+        
         self.engine = create_engine(database_url, echo=False)
-        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+        self.Session = sessionmaker(bind=self.engine)
+        
+        # 自动创建所有表（如果不存在）
+        try:
+            Base.metadata.create_all(self.engine)
+            logger.info("Database tables initialized successfully")
+        except Exception as e:
+            logger.error(f"Error initializing database tables: {e}")
     
     def create_all_tables(self):
         """Create all tables in the database"""
@@ -681,7 +703,7 @@ class DatabaseManager:
     
     def get_session(self):
         """Get a new database session"""
-        return self.SessionLocal()
+        return self.Session()
     
     def close_session(self, session):
         """Close a database session"""
