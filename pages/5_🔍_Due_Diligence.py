@@ -1057,15 +1057,232 @@ if st.session_state.selected_dd_project:
     
     # ===== Tab 4: Report =====
     with tab4:
-        st.subheader("Investment Report")
-        st.info("💡 Report generation will be implemented in Day 10")
+        st.subheader("📄 Investment Decision Report")
         
-        st.write("**Planned Features:**")
-        st.write("- Executive summary")
-        st.write("- Financial analysis")
-        st.write("- Risk assessment")
-        st.write("- Investment recommendation")
-        st.write("- PDF export")
+        # 检查参数
+        required_params = ['purchase_price', 'construction_cost', 'estimated_monthly_rent']
+        missing_params = [p for p in required_params if not project.__dict__.get(p)]
+        
+        if missing_params:
+            st.warning(f"⚠️ Please fill in required parameters in Tab 1 to generate report")
+        else:
+            from utils.financial_model import FinancialModel, format_currency, format_percentage
+            from utils.dd_report_generator import DDReportGenerator
+            
+            # 准备参数
+            model_params = {
+                'purchase_price': project.purchase_price or 0,
+                'acquisition_costs': project.acquisition_costs or 0,
+                'construction_cost': project.construction_cost or 0,
+                'construction_duration_months': project.construction_duration_months or 12,
+                'contingency_percentage': project.contingency_percentage or 10.0,
+                'equity_percentage': project.equity_percentage or 30.0,
+                'debt_percentage': project.debt_percentage or 70.0,
+                'interest_rate': project.interest_rate or 6.0,
+                'loan_term_years': project.loan_term_years or 25,
+                'estimated_monthly_rent': project.estimated_monthly_rent or 0,
+                'rent_growth_rate': project.rent_growth_rate or 3.0,
+                'occupancy_rate': project.occupancy_rate or 95.0,
+                'operating_expense_ratio': project.operating_expense_ratio or 30.0,
+                'holding_period_years': project.holding_period_years or 10,
+                'exit_cap_rate': project.exit_cap_rate or 6.5
+            }
+            
+            try:
+                # 计算财务模型
+                model = FinancialModel(model_params)
+                returns = model.calculate_returns()
+                scenarios = model.calculate_three_scenarios()
+                
+                # ========== 投资推荐 ==========
+                st.write("### 🎯 Investment Recommendation")
+                
+                irr = returns.get('irr', 0)
+                
+                # 决定推荐
+                if irr and irr >= 20:
+                    recommendation = "STRONG BUY"
+                    rec_color = "green"
+                    rec_icon = "✅"
+                elif irr and irr >= 15:
+                    recommendation = "BUY"
+                    rec_color = "blue"
+                    rec_icon = "👍"
+                elif irr and irr >= 12:
+                    recommendation = "HOLD"
+                    rec_color = "orange"
+                    rec_icon = "⚠️"
+                else:
+                    recommendation = "PASS"
+                    rec_color = "red"
+                    rec_icon = "❌"
+                
+                st.markdown(
+                    f"<h2 style='text-align: center; color: {rec_color};'>{rec_icon} {recommendation}</h2>",
+                    unsafe_allow_html=True
+                )
+                
+                # 推荐理由
+                if irr >= 20:
+                    rationale = f"""
+                    **Strong investment opportunity with exceptional returns:**
+                    - Projected IRR of {format_percentage(irr)} significantly exceeds target (15%)
+                    - Equity multiple of {returns.get('equity_multiple', 0):.2f}x demonstrates strong value creation
+                    - Positive NPV of {format_currency(returns.get('npv'))} creates shareholder value
+                    - Recommend proceeding to final due diligence and contract negotiation
+                    """
+                elif irr >= 15:
+                    rationale = f"""
+                    **Solid investment meeting return criteria:**
+                    - Projected IRR of {format_percentage(irr)} meets target hurdle rate
+                    - Returns are acceptable with manageable risk profile
+                    - Recommend proceeding with careful monitoring of key assumptions
+                    """
+                elif irr >= 12:
+                    rationale = f"""
+                    **Marginal investment requiring optimization:**
+                    - Projected IRR of {format_percentage(irr)} is below target but acceptable
+                    - Consider value enhancement opportunities before proceeding
+                    - Recommend renegotiation of terms or cost reduction initiatives
+                    """
+                else:
+                    rationale = f"""
+                    **Investment does not meet criteria:**
+                    - Projected IRR of {format_percentage(irr)} falls short of minimum requirements
+                    - Returns do not justify the risk profile
+                    - Recommend passing or substantial restructuring of deal terms
+                    """
+                
+                st.info(rationale)
+                
+                st.write("---")
+                
+                # ========== 报告预览 ==========
+                st.write("### 📋 Report Preview")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.write("**Report Contents:**")
+                    st.write("✅ Executive Summary")
+                    st.write("✅ Project Overview")
+                    st.write("✅ Development Cost Analysis")
+                    st.write("✅ Financing Structure")
+                    st.write("✅ Return Metrics")
+                    st.write("✅ Scenario Analysis")
+                    st.write("✅ Risk Assessment")
+                    st.write("✅ Investment Recommendation")
+                
+                with col2:
+                    st.write("**Key Metrics Summary:**")
+                    st.write(f"IRR: **{format_percentage(irr)}**")
+                    st.write(f"NPV: **{format_currency(returns.get('npv'))}**")
+                    st.write(f"Equity Multiple: **{returns.get('equity_multiple', 0):.2f}x**")
+                    st.write(f"Total Profit: **{format_currency(returns.get('total_profit'))}**")
+                    st.write(f"DSCR (Avg): **{returns.get('avg_dscr', 0):.2f}x**")
+                
+                st.write("---")
+                
+                # ========== 情景对比 ==========
+                st.write("### 📊 Scenario Summary")
+                
+                scenario_summary = pd.DataFrame([
+                    {
+                        'Scenario': '😰 Pessimistic',
+                        'IRR': format_percentage(scenarios['pessimistic'].get('irr')),
+                        'NPV': format_currency(scenarios['pessimistic'].get('npv')),
+                        'Multiple': f"{scenarios['pessimistic'].get('equity_multiple', 0):.2f}x"
+                    },
+                    {
+                        'Scenario': '😐 Base Case',
+                        'IRR': format_percentage(scenarios['base'].get('irr')),
+                        'NPV': format_currency(scenarios['base'].get('npv')),
+                        'Multiple': f"{scenarios['base'].get('equity_multiple', 0):.2f}x"
+                    },
+                    {
+                        'Scenario': '😊 Optimistic',
+                        'IRR': format_percentage(scenarios['optimistic'].get('irr')),
+                        'NPV': format_currency(scenarios['optimistic'].get('npv')),
+                        'Multiple': f"{scenarios['optimistic'].get('equity_multiple', 0):.2f}x"
+                    }
+                ])
+                
+                st.dataframe(scenario_summary, use_container_width=True, hide_index=True)
+                
+                st.write("---")
+                
+                # ========== PDF下载 ==========
+                st.write("### 📥 Download Report")
+                
+                st.write("Generate a comprehensive PDF report for stakeholders and investors.")
+                
+                col1, col2, col3 = st.columns([1, 1, 1])
+                
+                with col2:
+                    if st.button("📄 Generate PDF Report", type="primary", use_container_width=True):
+                        with st.spinner("Generating professional report..."):
+                            try:
+                                # 生成报告
+                                report_gen = DDReportGenerator(project, db)
+                                pdf_buffer = report_gen.generate_report()
+                                
+                                # 提供下载
+                                filename = f"DD_Report_{project.name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf"
+                                
+                                st.download_button(
+                                    label="💾 Download PDF",
+                                    data=pdf_buffer,
+                                    file_name=filename,
+                                    mime="application/pdf",
+                                    use_container_width=True
+                                )
+                                
+                                st.success("✅ Report generated successfully!")
+                                
+                            except Exception as e:
+                                st.error(f"❌ Error generating report: {e}")
+                                import traceback
+                                with st.expander("🔍 Error Details"):
+                                    st.code(traceback.format_exc())
+                
+                # ========== 快速操作 ==========
+                st.write("---")
+                st.write("### ⚡ Quick Actions")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if st.button("🔄 Recalculate All Metrics", use_container_width=True):
+                        st.info("All metrics are automatically calculated based on current parameters.")
+                        st.rerun()
+                
+                with col2:
+                    if st.button("📧 Email Report (Coming Soon)", use_container_width=True, disabled=True):
+                        st.info("Email functionality will be available in a future update.")
+                
+                # ========== 项目状态更新 ==========
+                st.write("---")
+                st.write("### 🏷️ Update Project Status")
+                
+                current_status = project.status
+                
+                new_status = st.selectbox(
+                    "Change project status:",
+                    ["Under Review", "Approved", "Rejected", "On Hold"],
+                    index=["Under Review", "Approved", "Rejected", "On Hold"].index(current_status) if current_status else 0
+                )
+                
+                if new_status != current_status:
+                    if st.button(f"Update Status to: {new_status}", type="primary"):
+                        db.update_dd_project(project.id, {'status': new_status})
+                        st.success(f"✅ Status updated to: {new_status}")
+                        st.rerun()
+                
+            except Exception as e:
+                st.error(f"❌ Error loading report: {e}")
+                import traceback
+                with st.expander("🔍 Error Details"):
+                    st.code(traceback.format_exc())
 
 else:
     # 创建新项目
