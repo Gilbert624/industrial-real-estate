@@ -473,6 +473,207 @@ class FinancialModel:
             'total_profit': equity_returned - equity_invested,
             'cash_flow_model': cash_flow_model
         }
+    
+    def calculate_scenario(self, scenario_adjustments: dict) -> Dict:
+        """
+        Calculate returns for a specific scenario with parameter adjustments
+        
+        Args:
+            scenario_adjustments: Dictionary with percentage adjustments
+                {
+                    'purchase_price_adj': 10.0,  # +10%
+                    'construction_cost_adj': -5.0,  # -5%
+                    'rent_adj': 15.0,  # +15%
+                    'occupancy_adj': -5.0,  # -5% points
+                    'exit_cap_adj': 0.5  # +0.5% points
+                }
+        
+        Returns:
+            Dictionary with scenario results
+        """
+        # Create adjusted parameters
+        adjusted_params = self.params.copy()
+        
+        # Apply adjustments
+        if 'purchase_price_adj' in scenario_adjustments:
+            adj = scenario_adjustments['purchase_price_adj'] / 100
+            adjusted_params['purchase_price'] = self.params.get('purchase_price', 0) * (1 + adj)
+        
+        if 'construction_cost_adj' in scenario_adjustments:
+            adj = scenario_adjustments['construction_cost_adj'] / 100
+            adjusted_params['construction_cost'] = self.params.get('construction_cost', 0) * (1 + adj)
+        
+        if 'rent_adj' in scenario_adjustments:
+            adj = scenario_adjustments['rent_adj'] / 100
+            adjusted_params['estimated_monthly_rent'] = self.params.get('estimated_monthly_rent', 0) * (1 + adj)
+        
+        if 'occupancy_adj' in scenario_adjustments:
+            # This is absolute adjustment in percentage points
+            adjusted_params['occupancy_rate'] = self.params.get('occupancy_rate', 95.0) + scenario_adjustments['occupancy_adj']
+            # Clamp between 0 and 100
+            adjusted_params['occupancy_rate'] = max(0, min(100, adjusted_params['occupancy_rate']))
+        
+        if 'exit_cap_adj' in scenario_adjustments:
+            # This is absolute adjustment in percentage points
+            adjusted_params['exit_cap_rate'] = self.params.get('exit_cap_rate', 6.5) + scenario_adjustments['exit_cap_adj']
+        
+        # Create new model with adjusted parameters
+        scenario_model = FinancialModel(adjusted_params)
+        
+        # Calculate returns
+        scenario_returns = scenario_model.calculate_returns()
+        
+        return scenario_returns
+    
+    def calculate_three_scenarios(self) -> Dict:
+        """
+        Calculate Base, Optimistic, and Pessimistic scenarios
+        
+        Returns:
+            Dictionary with all three scenarios
+        """
+        # Base Case (current parameters)
+        base_case = self.calculate_returns()
+        
+        # Optimistic Scenario
+        # - Construction costs: -10%
+        # - Rent: +20%
+        # - Occupancy: +3% points
+        # - Exit cap: -0.5% points (lower cap = higher value)
+        optimistic = self.calculate_scenario({
+            'construction_cost_adj': -10.0,
+            'rent_adj': 20.0,
+            'occupancy_adj': 3.0,
+            'exit_cap_adj': -0.5
+        })
+        
+        # Pessimistic Scenario
+        # - Construction costs: +15%
+        # - Rent: -15%
+        # - Occupancy: -5% points
+        # - Exit cap: +1.0% points (higher cap = lower value)
+        pessimistic = self.calculate_scenario({
+            'construction_cost_adj': 15.0,
+            'rent_adj': -15.0,
+            'occupancy_adj': -5.0,
+            'exit_cap_adj': 1.0
+        })
+        
+        return {
+            'base': base_case,
+            'optimistic': optimistic,
+            'pessimistic': pessimistic
+        }
+    
+    def sensitivity_analysis(self, variable: str, range_pct: float = 30.0, steps: int = 11) -> Dict:
+        """
+        Perform sensitivity analysis on a single variable
+        
+        Args:
+            variable: Variable to analyze ('purchase_price', 'construction_cost', 'rent', 'occupancy', 'exit_cap')
+            range_pct: Range of adjustment (e.g., 30 means -30% to +30%)
+            steps: Number of data points
+        
+        Returns:
+            Dictionary with sensitivity data
+        """
+        # Create range of adjustments
+        adjustments = np.linspace(-range_pct, range_pct, steps)
+        
+        results = {
+            'adjustments': adjustments.tolist(),
+            'irr': [],
+            'npv': [],
+            'equity_multiple': []
+        }
+        
+        for adj in adjustments:
+            if variable == 'purchase_price':
+                scenario = self.calculate_scenario({'purchase_price_adj': adj})
+            elif variable == 'construction_cost':
+                scenario = self.calculate_scenario({'construction_cost_adj': adj})
+            elif variable == 'rent':
+                scenario = self.calculate_scenario({'rent_adj': adj})
+            elif variable == 'occupancy':
+                # For occupancy, convert percentage to points (e.g., 10% of 95% = 9.5 points)
+                base_occupancy = self.params.get('occupancy_rate', 95.0)
+                points_adj = (adj / 100) * base_occupancy
+                scenario = self.calculate_scenario({'occupancy_adj': points_adj})
+            elif variable == 'exit_cap':
+                # For cap rate, use absolute points
+                base_cap = self.params.get('exit_cap_rate', 6.5)
+                points_adj = (adj / 100) * base_cap
+                scenario = self.calculate_scenario({'exit_cap_adj': points_adj})
+            else:
+                continue
+            
+            results['irr'].append(scenario.get('irr'))
+            results['npv'].append(scenario.get('npv'))
+            results['equity_multiple'].append(scenario.get('equity_multiple'))
+        
+        return results
+    
+    def tornado_analysis(self, range_pct: float = 20.0) -> Dict:
+        """
+        Perform tornado analysis on all key variables
+        Shows which variables have the most impact on IRR
+        
+        Args:
+            range_pct: Range of adjustment for each variable
+        
+        Returns:
+            Dictionary with tornado data
+        """
+        variables = ['purchase_price', 'construction_cost', 'rent', 'occupancy', 'exit_cap']
+        variable_labels = {
+            'purchase_price': 'Land Cost',
+            'construction_cost': 'Construction Cost',
+            'rent': 'Rental Income',
+            'occupancy': 'Occupancy Rate',
+            'exit_cap': 'Exit Cap Rate'
+        }
+        
+        base_returns = self.calculate_returns()
+        base_irr = base_returns.get('irr', 0)
+        
+        tornado_data = []
+        
+        for var in variables:
+            # Calculate low case (-range_pct)
+            if var in ['occupancy', 'exit_cap']:
+                base_val = self.params.get('occupancy_rate' if var == 'occupancy' else 'exit_cap_rate', 95.0)
+                low_adj = -(range_pct / 100) * base_val
+                high_adj = (range_pct / 100) * base_val
+                
+                low_scenario = self.calculate_scenario({f'{var}_adj': low_adj})
+                high_scenario = self.calculate_scenario({f'{var}_adj': high_adj})
+            else:
+                low_scenario = self.calculate_scenario({f'{var}_adj': -range_pct})
+                high_scenario = self.calculate_scenario({f'{var}_adj': range_pct})
+            
+            low_irr = low_scenario.get('irr', 0)
+            high_irr = high_scenario.get('irr', 0)
+            
+            # Calculate impact (range of IRR)
+            impact = abs(high_irr - low_irr) if (high_irr and low_irr) else 0
+            
+            tornado_data.append({
+                'variable': variable_labels[var],
+                'base_irr': base_irr,
+                'low_irr': low_irr,
+                'high_irr': high_irr,
+                'impact': impact,
+                'low_label': f'-{range_pct}%',
+                'high_label': f'+{range_pct}%'
+            })
+        
+        # Sort by impact (descending)
+        tornado_data.sort(key=lambda x: x['impact'], reverse=True)
+        
+        return {
+            'base_irr': base_irr,
+            'tornado_data': tornado_data
+        }
 
 
 def format_currency(amount: float) -> str:

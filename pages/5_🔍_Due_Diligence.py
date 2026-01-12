@@ -723,14 +723,337 @@ if st.session_state.selected_dd_project:
     
     # ===== Tab 3: Scenarios =====
     with tab3:
-        st.subheader("Scenario Analysis")
-        st.info("💡 Scenario analysis will be implemented in Day 9")
+        st.subheader("📈 Scenario & Sensitivity Analysis")
         
-        st.write("**Planned Features:**")
-        st.write("- Base Case scenario")
-        st.write("- Optimistic scenario (+20% rent, -10% cost)")
-        st.write("- Pessimistic scenario (-20% rent, +15% cost)")
-        st.write("- Sensitivity analysis charts")
+        # 检查参数
+        required_params = ['purchase_price', 'construction_cost', 'estimated_monthly_rent']
+        missing_params = [p for p in required_params if not project.__dict__.get(p)]
+        
+        if missing_params:
+            st.warning(f"⚠️ Please fill in required parameters in Tab 1")
+        else:
+            from utils.financial_model import FinancialModel, format_currency, format_percentage
+            import plotly.graph_objects as go
+            
+            # 准备参数
+            model_params = {
+                'purchase_price': project.purchase_price or 0,
+                'acquisition_costs': project.acquisition_costs or 0,
+                'construction_cost': project.construction_cost or 0,
+                'construction_duration_months': project.construction_duration_months or 12,
+                'contingency_percentage': project.contingency_percentage or 10.0,
+                'equity_percentage': project.equity_percentage or 30.0,
+                'debt_percentage': project.debt_percentage or 70.0,
+                'interest_rate': project.interest_rate or 6.0,
+                'loan_term_years': project.loan_term_years or 25,
+                'estimated_monthly_rent': project.estimated_monthly_rent or 0,
+                'rent_growth_rate': project.rent_growth_rate or 3.0,
+                'occupancy_rate': project.occupancy_rate or 95.0,
+                'operating_expense_ratio': project.operating_expense_ratio or 30.0,
+                'holding_period_years': project.holding_period_years or 10,
+                'exit_cap_rate': project.exit_cap_rate or 6.5
+            }
+            
+            try:
+                model = FinancialModel(model_params)
+                
+                # ========== 三情景分析 ==========
+                st.write("### 🎯 Three Scenario Comparison")
+                
+                with st.spinner("Calculating scenarios..."):
+                    scenarios = model.calculate_three_scenarios()
+                
+                # 情景对比表
+                col1, col2, col3 = st.columns(3)
+                
+                scenario_names = {
+                    'pessimistic': ('Pessimistic', '😰', '#FF6B6B'),
+                    'base': ('Base Case', '😐', '#4ECDC4'),
+                    'optimistic': ('Optimistic', '😊', '#45B7D1')
+                }
+                
+                for idx, (key, (name, emoji, color)) in enumerate(scenario_names.items()):
+                    scenario = scenarios[key]
+                    col = [col1, col2, col3][idx]
+                    
+                    with col:
+                        st.markdown(f"### {emoji} {name}")
+                        
+                        # 显示关键指标
+                        metrics = {
+                            'IRR': format_percentage(scenario.get('irr')),
+                            'NPV': format_currency(scenario.get('npv')),
+                            'Equity Multiple': f"{scenario.get('equity_multiple', 0):.2f}x",
+                            'Total Profit': format_currency(scenario.get('total_profit'))
+                        }
+                        
+                        for metric_name, value in metrics.items():
+                            st.write(f"**{metric_name}:** {value}")
+                        
+                        # 显示假设
+                        if key == 'optimistic':
+                            st.caption("📈 Assumptions:")
+                            st.caption("- Construction: -10%")
+                            st.caption("- Rent: +20%")
+                            st.caption("- Occupancy: +3pts")
+                            st.caption("- Exit Cap: -0.5pts")
+                        elif key == 'pessimistic':
+                            st.caption("📉 Assumptions:")
+                            st.caption("- Construction: +15%")
+                            st.caption("- Rent: -15%")
+                            st.caption("- Occupancy: -5pts")
+                            st.caption("- Exit Cap: +1.0pts")
+                
+                st.write("---")
+                
+                # 雷达图对比
+                st.write("### 📊 Scenario Comparison - Radar Chart")
+                
+                # 准备雷达图数据
+                categories = ['IRR', 'NPV', 'Equity Multiple', 'Cash-on-Cash', 'DSCR']
+                
+                # 标准化函数（转换为0-100分数）
+                def normalize(value, target, max_val):
+                    if value is None:
+                        return 0
+                    # 按照目标值作为100分标准
+                    return min(100, (value / target) * 100)
+                
+                # 目标值
+                targets = {
+                    'irr': 20.0,  # 20% IRR = 100分
+                    'npv': scenarios['base'].get('npv', 1000000),  # Base NPV = 100分
+                    'equity_multiple': 3.0,  # 3x = 100分
+                    'cash_on_cash_return': 15.0,  # 15% = 100分
+                    'avg_dscr': 2.0  # 2.0x = 100分
+                }
+                
+                fig_radar = go.Figure()
+                
+                for key, (name, emoji, color) in scenario_names.items():
+                    scenario = scenarios[key]
+                    
+                    values = [
+                        normalize(scenario.get('irr'), targets['irr'], 40),
+                        normalize(scenario.get('npv'), targets['npv'], targets['npv'] * 2),
+                        normalize(scenario.get('equity_multiple'), targets['equity_multiple'], 5),
+                        normalize(scenario.get('cash_on_cash_return'), targets['cash_on_cash_return'], 30),
+                        normalize(scenario.get('avg_dscr'), targets['avg_dscr'], 3)
+                    ]
+                    
+                    fig_radar.add_trace(go.Scatterpolar(
+                        r=values,
+                        theta=categories,
+                        fill='toself',
+                        name=f"{emoji} {name}",
+                        line=dict(color=color, width=2)
+                    ))
+                
+                fig_radar.update_layout(
+                    polar=dict(
+                        radialaxis=dict(
+                            visible=True,
+                            range=[0, 100]
+                        )
+                    ),
+                    showlegend=True,
+                    height=500
+                )
+                
+                st.plotly_chart(fig_radar, use_container_width=True)
+                
+                st.write("---")
+                
+                # ========== 敏感性分析 ==========
+                st.write("### 🎚️ Sensitivity Analysis")
+                
+                st.write("**How does IRR change when we adjust key variables?**")
+                
+                # 选择要分析的变量
+                sensitivity_vars = {
+                    'Land Cost': 'purchase_price',
+                    'Construction Cost': 'construction_cost',
+                    'Rental Income': 'rent',
+                    'Occupancy Rate': 'occupancy',
+                    'Exit Cap Rate': 'exit_cap'
+                }
+                
+                selected_var = st.selectbox(
+                    "Select variable to analyze:",
+                    options=list(sensitivity_vars.keys())
+                )
+                
+                var_key = sensitivity_vars[selected_var]
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    range_pct = st.slider(
+                        "Adjustment range (±%)",
+                        min_value=10,
+                        max_value=50,
+                        value=30,
+                        step=5,
+                        help="Range of variation to test"
+                    )
+                
+                with col2:
+                    steps = st.slider(
+                        "Number of data points",
+                        min_value=5,
+                        max_value=21,
+                        value=11,
+                        step=2
+                    )
+                
+                if st.button("🔍 Run Sensitivity Analysis", type="primary"):
+                    with st.spinner("Calculating sensitivity..."):
+                        sensitivity = model.sensitivity_analysis(var_key, range_pct, steps)
+                    
+                    # 创建敏感性图表
+                    fig_sens = go.Figure()
+                    
+                    # IRR线
+                    fig_sens.add_trace(go.Scatter(
+                        x=sensitivity['adjustments'],
+                        y=sensitivity['irr'],
+                        mode='lines+markers',
+                        name='IRR',
+                        line=dict(color='#4ECDC4', width=3),
+                        marker=dict(size=8)
+                    ))
+                    
+                    # 添加基准线
+                    fig_sens.add_hline(
+                        y=scenarios['base'].get('irr'),
+                        line_dash="dash",
+                        line_color="gray",
+                        annotation_text="Base Case"
+                    )
+                    
+                    # 添加目标线（15% IRR）
+                    fig_sens.add_hline(
+                        y=15.0,
+                        line_dash="dot",
+                        line_color="green",
+                        annotation_text="Target 15%"
+                    )
+                    
+                    fig_sens.update_layout(
+                        title=f"IRR Sensitivity to {selected_var}",
+                        xaxis_title=f"{selected_var} Change (%)",
+                        yaxis_title="IRR (%)",
+                        hovermode='x unified',
+                        height=400
+                    )
+                    
+                    st.plotly_chart(fig_sens, use_container_width=True)
+                    
+                    # 显示关键洞察
+                    irr_range = max(sensitivity['irr']) - min(sensitivity['irr'])
+                    st.info(f"""
+                    💡 **Key Insight:** 
+                    A ±{range_pct}% change in {selected_var} results in a {irr_range:.1f} percentage point swing in IRR
+                    (from {min(sensitivity['irr']):.1f}% to {max(sensitivity['irr']):.1f}%)
+                    """)
+                
+                st.write("---")
+                
+                # ========== 龙卷风图 ==========
+                st.write("### 🌪️ Tornado Analysis - Variable Impact Ranking")
+                
+                st.write("**Which variables have the biggest impact on IRR?**")
+                
+                tornado_range = st.slider(
+                    "Test range (±%)",
+                    min_value=10,
+                    max_value=30,
+                    value=20,
+                    step=5,
+                    key="tornado_range"
+                )
+                
+                if st.button("🌪️ Generate Tornado Chart", type="primary"):
+                    with st.spinner("Calculating variable impacts..."):
+                        tornado = model.tornado_analysis(tornado_range)
+                    
+                    # 创建龙卷风图
+                    tornado_data = tornado['tornado_data']
+                    base_irr = tornado['base_irr']
+                    
+                    fig_tornado = go.Figure()
+                    
+                    # 为每个变量添加条形
+                    for i, item in enumerate(tornado_data):
+                        # 低值条（向左）
+                        fig_tornado.add_trace(go.Bar(
+                            y=[item['variable']],
+                            x=[item['low_irr'] - base_irr],
+                            name=item['low_label'],
+                            orientation='h',
+                            marker=dict(color='#FF6B6B'),
+                            text=[f"{item['low_irr']:.1f}%"],
+                            textposition='inside',
+                            showlegend=(i == 0),
+                            legendgroup='low'
+                        ))
+                        
+                        # 高值条（向右）
+                        fig_tornado.add_trace(go.Bar(
+                            y=[item['variable']],
+                            x=[item['high_irr'] - base_irr],
+                            name=item['high_label'],
+                            orientation='h',
+                            marker=dict(color='#4ECDC4'),
+                            text=[f"{item['high_irr']:.1f}%"],
+                            textposition='inside',
+                            showlegend=(i == 0),
+                            legendgroup='high'
+                        ))
+                    
+                    # 添加基准线
+                    fig_tornado.add_vline(x=0, line_width=2, line_color="black")
+                    
+                    fig_tornado.update_layout(
+                        title=f"IRR Impact - Variables Ranked by Importance (±{tornado_range}%)",
+                        xaxis_title="IRR Deviation from Base Case (%)",
+                        yaxis_title="",
+                        barmode='overlay',
+                        height=400,
+                        showlegend=True
+                    )
+                    
+                    st.plotly_chart(fig_tornado, use_container_width=True)
+                    
+                    # 显示排名表
+                    st.write("**Impact Ranking:**")
+                    
+                    ranking_df = pd.DataFrame([
+                        {
+                            'Rank': i + 1,
+                            'Variable': item['variable'],
+                            'IRR Range': f"{item['low_irr']:.1f}% to {item['high_irr']:.1f}%",
+                            'Impact': f"{item['impact']:.1f} pts",
+                            'Sensitivity': '🔴 High' if item['impact'] > 10 else '🟡 Medium' if item['impact'] > 5 else '🟢 Low'
+                        }
+                        for i, item in enumerate(tornado_data)
+                    ])
+                    
+                    st.dataframe(ranking_df, use_container_width=True, hide_index=True)
+                    
+                    # 关键洞察
+                    top_var = tornado_data[0]
+                    st.success(f"""
+                    🎯 **Most Critical Variable:** {top_var['variable']}
+                    
+                    This variable has the highest impact on returns. Focus risk mitigation efforts here.
+                    """)
+                
+            except Exception as e:
+                st.error(f"❌ Error in scenario analysis: {e}")
+                import traceback
+                with st.expander("🔍 Error Details"):
+                    st.code(traceback.format_exc())
     
     # ===== Tab 4: Report =====
     with tab4:
