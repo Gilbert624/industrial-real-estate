@@ -9,8 +9,22 @@ Version: 0.2-prod
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
+import os
 from datetime import datetime, timedelta
 from sqlalchemy import func
+
+# Theme imports
+from config.theme import generate_css, LIGHT_THEME, DARK_THEME
+
+# Internationalization
+from config.i18n import t, get_language, set_language, get_current_language
+from utils.language_switcher import render_language_switcher_compact
+
+# Security imports
+from config.security import get_security_manager, require_production_check
+
+# Alias for compatibility
+get_current_language = get_language
 
 # Import database models
 try:
@@ -32,40 +46,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for professional styling
-st.markdown("""
-    <style>
-    .main {
-        background-color: #f8f9fa;
-    }
-    .stMetric {
-        background-color: white;
-        padding: 15px;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    .sidebar .sidebar-content {
-        background-color: #1e3a5f;
-        color: white;
-    }
-    h1 {
-        color: #1e3a5f;
-        font-weight: 600;
-    }
-    h2 {
-        color: #2c5282;
-        font-weight: 500;
-    }
-    h3 {
-        color: #2c5282;
-        font-weight: 500;
-    }
-    .stAlert {
-        background-color: #f0f7ff;
-        border-left: 4px solid #1e3a5f;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# Production environment security check
+security = get_security_manager()
+if os.getenv('APP_ENV') == 'production':
+    security.validate_api_key()
+
+# Apply professional theme
+st.markdown(generate_css('light'), unsafe_allow_html=True)
 
 
 @st.cache_resource
@@ -82,9 +69,11 @@ def get_database_connection():
         return None
 
 
+@st.cache_data(ttl=3600)
 def get_portfolio_metrics(session):
     """
     Calculate portfolio metrics from database
+    缓存1小时，减少数据库查询频率
     
     Returns:
         dict: Portfolio metrics including asset count, total value, and active projects
@@ -134,9 +123,11 @@ def get_portfolio_metrics(session):
         }
 
 
+@st.cache_data(ttl=300)
 def get_recent_transactions(session, limit=5):
     """
     Get recent transactions from database
+    缓存5分钟，因为交易数据更新较频繁
     
     Args:
         session: Database session
@@ -157,8 +148,11 @@ def get_recent_transactions(session, limit=5):
         return []
 
 
+@st.cache_data(ttl=3600)
 def get_portfolio_trend(session, months=6):
-    """获取投资组合趋势数据"""
+    """获取投资组合趋势数据
+    缓存1小时，趋势数据变化较慢
+    """
     try:
         assets = session.query(Asset).all()
         total_current_value = sum(float(a.current_valuation or 0) for a in assets)
@@ -183,11 +177,13 @@ def get_portfolio_trend(session, months=6):
 def display_metrics(metrics):
     """Display portfolio metrics in columns"""
     
-    col1, col2, col3 = st.columns(3)
+    # Bento Grid布局
+    st.markdown('<div class="bento-grid">', unsafe_allow_html=True)
+    col1, col2, col3, col4 = st.columns(4, gap="large")
     
     with col1:
         st.metric(
-            label="Total Assets",
+            label=t('home.total_assets'),
             value=f"{metrics['total_assets']}",
             delta=None
         )
@@ -197,7 +193,7 @@ def display_metrics(metrics):
         change_millions = metrics['valuation_change'] / 1_000_000
         
         st.metric(
-            label="Portfolio Value",
+            label=t('home.portfolio_value'),
             value=f"${valuation_millions:.1f}M AUD",
             delta=f"${change_millions:+.1f}M" if change_millions != 0 else None,
             delta_color="normal"
@@ -205,17 +201,23 @@ def display_metrics(metrics):
     
     with col3:
         st.metric(
-            label="Active Projects",
+            label=t('home.active_projects'),
             value=f"{metrics['active_projects']}",
-            delta=f"{metrics['total_projects']} total"
+            delta=f"{metrics['total_projects']} {t('common.total')}"
         )
+    
+    with col4:
+        # Add a fourth metric or leave empty
+        pass
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def display_transactions(transactions):
     """Display recent transactions in a formatted table"""
     
     if not transactions:
-        st.info("No transactions found in database.")
+        st.info(t('common.no_data'))
         return
     
     # Create DataFrame for display
@@ -260,7 +262,7 @@ def display_transactions(transactions):
 def display_portfolio_chart(dates, values):
     """显示投资组合趋势图表（Plotly 5.x 兼容）"""
     if not dates or not values:
-        st.info("No data available for chart.")
+        st.info(t('common.no_data'))
         return
     
     fig = go.Figure()
@@ -278,7 +280,7 @@ def display_portfolio_chart(dates, values):
     # Plotly 5.x 兼容的布局配置
     fig.update_layout(
         title=dict(
-            text='Portfolio Value Trend (Last 6 Months)',
+            text=t('home.portfolio_value') + ' ' + t('common.trend'),
             font=dict(size=18, color='#1e3a5f', family='Arial'),
             x=0.05,
             xanchor='left'
@@ -315,39 +317,57 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.markdown("### 🏢 Asset Management System")
-        st.markdown("**Version:** v0.2-prod")
-        st.markdown("**Developer:** Gilbert - Brisbane")
+        st.markdown(f"### 🏢 {t('app.title')}")
+        st.markdown(f"**{t('app.version')}:** v0.2-prod")
+        st.markdown(f"**{t('app.developer')}:** Gilbert - Brisbane")
         st.markdown("---")
-        st.markdown("#### Status")
+        st.markdown(f"#### {t('common.status')}")
         
         # Check database connection
         if DB_AVAILABLE:
             db_manager = get_database_connection()
             if db_manager:
-                st.success("✅ Database Connected")
-                st.info("📊 Displaying Live Data")
+                st.success(f"✅ {t('app.database_connected')}")
+                st.info(f"📊 {t('app.displaying_live_data')}")
             else:
-                st.error("❌ Database Connection Failed")
+                st.error(f"❌ {t('app.database_connection_failed')}")
         else:
-            st.error("❌ Models Not Available")
+            st.error(f"❌ {t('app.models_not_available')}")
         
         st.markdown("---")
-        st.markdown(f"**Last Updated:** {datetime.now().strftime('%d %b %Y, %H:%M')}")
+        st.markdown(f"**{t('common.last_updated')}:** {datetime.now().strftime('%d %b %Y, %H:%M')}")
+        
+        # Language switcher
+        st.markdown("---")
+        render_language_switcher_compact()
+        
+        # Theme switcher
+        st.markdown("---")
+        theme_options = [t('common.light'), t('common.dark')]
+        theme_mode = st.selectbox(
+            f"🎨 {t('app.theme')}",
+            theme_options,
+            index=0,
+            key="theme_selector"
+        )
+        
+        # Check if dark theme is selected (compare with translated text)
+        if theme_mode == t('common.dark'):
+            st.markdown(generate_css('dark'), unsafe_allow_html=True)
     
     # Main content
-    st.title("🏢 Asset Management System")
-    st.markdown("### Brisbane & Sunshine Coast Industrial Real Estate Portfolio")
+    st.title(f"🏢 {t('app.title')}")
+    st.markdown(f"### {t('app.subtitle')}")
     
     # Check if we can proceed
     if not DB_AVAILABLE:
-        st.error("⚠️ Database models are not available. Please check your installation.")
+        st.error(f"⚠️ {t('app.models_not_available')}")
         st.info("Ensure the 'models' directory is present and contains database.py")
         return
     
     db_manager = get_database_connection()
     if not db_manager:
-        st.error("⚠️ Could not connect to database. Please ensure 'industrial_real_estate.db' exists.")
+        st.error(f"⚠️ {t('app.database_connection_failed')}")
         st.info("Run: python -m models.init_db --sample")
         return
     
@@ -358,15 +378,15 @@ def main():
         st.markdown("---")
         
         # Portfolio Overview Section
-        st.markdown("### 📊 Portfolio Overview")
+        st.markdown(f"### 📊 {t('dashboard.portfolio_overview')}")
         
-        with st.spinner("Loading portfolio metrics..."):
+        with st.spinner(f"{t('common.loading')}"):
             metrics = get_portfolio_metrics(session)
             display_metrics(metrics)
         
         # Reports Section
         st.write("---")
-        st.subheader("📊 Generate Reports")
+        st.subheader(f"📊 {t('dashboard.generate_reports')}")
         
         # Import report generator
         try:
@@ -376,26 +396,26 @@ def main():
             col1, col2 = st.columns(2)
             
             with col1:
-                st.write("**Portfolio Report (PDF)**")
-                st.write("Comprehensive portfolio overview including assets and projects")
+                st.write(f"**{t('dashboard.portfolio_report_pdf')}**")
+                st.write(t('dashboard.portfolio_report_desc'))
                 
                 # Generate PDF report
-                if st.button("📄 Generate PDF Report", use_container_width=True, key="generate_pdf"):
+                if st.button(f"📄 {t('dashboard.generate_pdf_report')}", use_container_width=True, key="generate_pdf"):
                     try:
                         with st.spinner("Generating PDF report..."):
                             pdf_buffer = report_gen.generate_portfolio_pdf()
                             # BytesIO object - get bytes data
                             st.session_state['pdf_report'] = pdf_buffer.getvalue()
                             st.session_state['pdf_filename'] = f"portfolio_report_{datetime.now().strftime('%Y%m%d')}.pdf"
-                        st.success("✅ PDF generated successfully!")
+                        st.success(f"✅ {t('home.report_generated')}")
                     except Exception as e:
-                        st.error(f"❌ Error generating PDF: {e}")
+                        st.error(f"❌ {t('home.report_error')}")
                         st.session_state.pop('pdf_report', None)
                 
                 # Download PDF button
                 if 'pdf_report' in st.session_state:
                     st.download_button(
-                        label="💾 Download PDF",
+                        label=f"💾 {t('home.download_pdf')}",
                         data=st.session_state['pdf_report'],
                         file_name=st.session_state.get('pdf_filename', 'portfolio_report.pdf'),
                         mime="application/pdf",
@@ -404,26 +424,26 @@ def main():
                     )
             
             with col2:
-                st.write("**Financial Report (Excel)**")
-                st.write("Detailed financial data with multiple worksheets")
+                st.write(f"**{t('dashboard.financial_report_excel')}**")
+                st.write(t('dashboard.financial_report_desc'))
                 
                 # Generate Excel report
-                if st.button("📊 Generate Excel Report", use_container_width=True, key="generate_excel"):
+                if st.button(f"📊 {t('dashboard.generate_excel_report')}", use_container_width=True, key="generate_excel"):
                     try:
                         with st.spinner("Generating Excel report..."):
                             excel_buffer = report_gen.generate_financial_excel()
                             # BytesIO object - get bytes data
                             st.session_state['excel_report'] = excel_buffer.getvalue()
                             st.session_state['excel_filename'] = f"financial_report_{datetime.now().strftime('%Y%m%d')}.xlsx"
-                        st.success("✅ Excel generated successfully!")
+                        st.success(f"✅ {t('home.report_generated')}")
                     except Exception as e:
-                        st.error(f"❌ Error generating Excel: {e}")
+                        st.error(f"❌ {t('home.report_error')}")
                         st.session_state.pop('excel_report', None)
                 
                 # Download Excel button
                 if 'excel_report' in st.session_state:
                     st.download_button(
-                        label="💾 Download Excel",
+                        label=f"💾 {t('home.download_excel')}",
                         data=st.session_state['excel_report'],
                         file_name=st.session_state.get('excel_filename', 'financial_report.xlsx'),
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -438,18 +458,18 @@ def main():
         st.markdown("---")
         
         # Portfolio Trend Chart
-        st.markdown("### 📈 Portfolio Value Trend")
+        st.markdown(f"### 📈 {t('home.portfolio_value')} {t('common.trend')}")
         
-        with st.spinner("Loading trend data..."):
+        with st.spinner(t('common.loading')):
             dates, values = get_portfolio_trend(session)
             display_portfolio_chart(dates, values)
         
         st.markdown("---")
         
         # Recent Transactions Section
-        st.markdown("### 💰 Recent Transactions")
+        st.markdown(f"### 💰 {t('finance.recent_transactions')}")
         
-        with st.spinner("Loading transactions..."):
+        with st.spinner(t('common.loading')):
             transactions = get_recent_transactions(session, limit=5)
             display_transactions(transactions)
         
@@ -460,18 +480,18 @@ def main():
         
         with col1:
             st.markdown("#### 🎯 Quick Actions")
-            st.markdown("""
-            - View detailed reports
-            - Add new transaction
-            - Update asset values
+            st.markdown(f"""
+            - {t('common.view')} {t('common.details')}
+            - {t('finance.add_transaction')}
+            - {t('common.update')} {t('assets.asset_name')} {t('common.values')}
             """)
         
         with col2:
             st.markdown("#### 🔧 System Info")
             st.markdown(f"""
             - Database: SQLite
-            - Assets: {metrics['total_assets']}
-            - Projects: {metrics['total_projects']}
+            - {t('home.total_assets')}: {metrics['total_assets']}
+            - {t('home.active_projects')}: {metrics['total_projects']}
             """)
         
         with col3:
@@ -483,7 +503,7 @@ def main():
             """)
     
     except Exception as e:
-        st.error(f"❌ An error occurred: {e}")
+        st.error(f"❌ {t('messages.error_occurred')}: {e}")
         st.info("Please check the database connection and try refreshing the page.")
         import traceback
         with st.expander("Show Error Details"):

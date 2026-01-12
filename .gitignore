@@ -1,22 +1,47 @@
 # Python
 venv/
+env/
+ENV/
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
 *$py.class
 *.so
 .Python
 
 # Streamlit
 .streamlit/
+.streamlit/secrets.toml
 
 # Database
 *.db
+*.db-journal
+*.db-*
 *.sqlite
 *.sqlite3
 
 # Environment
 .env
-.DS_Store
+.env.*
+!.env.example
+
+# Production environment
+.env.production
+production_data.db
+production_data.db-*
+
+# Logs
+*.log
+logs/
+
+# Backup files
+backups/
+*.backup
+*.bak
+
+# Deployment
+deployment/
 
 # IDEs
 .vscode/
@@ -24,8 +49,12 @@ __pycache__/
 *.swp
 *.swo
 
-# Logs
-*.log
-
 # OS
+.DS_Store
 Thumbs.db
+
+# Sensitive data
+secrets/
+credentials/
+*.key
+*.pem

@@ -19,6 +19,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from models.database import (
     DatabaseManager, Asset, Project, Transaction, RentalIncome, DebtInstrument,
+    DDProject, DDScenario, DDAssumption, DDCashFlow,
     AssetType, AssetStatus, ProjectStatus, TransactionType, ExpenseCategory, DebtType
 )
 

@@ -44,9 +44,11 @@ def get_database():
         return None
 
 
+@st.cache_data(ttl=3600)
 def get_filter_options(session):
     """
     Get unique values for filters from database
+    缓存1小时，筛选选项变化不频繁
     
     Returns:
         dict: Filter options for region, type, and status
