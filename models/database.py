@@ -17,6 +17,11 @@ from sqlalchemy import (
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker, joinedload
 import enum
+import logging
+import hashlib
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 # Base class for all models
 Base = declarative_base()
@@ -492,6 +497,157 @@ class DebtInstrument(Base):
         if self.current_principal and self.interest_rate:
             return float(self.current_principal * (self.interest_rate / 100))
         return None
+
+
+class APIUsage(Base):
+    """Track Claude API usage for cost monitoring"""
+    __tablename__ = 'api_usage'
+    
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    query_type = Column(String(50))  # 'natural_query', 'quick_analysis', etc.
+    model_used = Column(String(50))  # 'sonnet-4', 'haiku', etc.
+    input_tokens = Column(Integer, nullable=False)
+    output_tokens = Column(Integer, nullable=False)
+    estimated_cost = Column(Float, nullable=False)
+    question_hash = Column(String(64))  # For detecting similar queries
+    response_cached = Column(Boolean, default=False)
+    user_question = Column(Text)  # Optional: store question for analysis
+    
+    def __repr__(self):
+        return f"<APIUsage(id={self.id}, query_type='{self.query_type}', cost={self.estimated_cost})>"
+
+
+# ============================================================================
+# DUE DILIGENCE MODELS
+# ============================================================================
+
+class DDProject(Base):
+    """Due Diligence Project - Investment opportunity being evaluated"""
+    __tablename__ = 'dd_projects'
+    
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Basic Info
+    name = Column(String(200), nullable=False)
+    description = Column(Text)
+    location = Column(String(200))
+    property_type = Column(String(100))  # Industrial Warehouse, Land, Mixed Use
+    status = Column(String(50), default='Under Review')  # Under Review, Approved, Rejected, On Hold
+    
+    # Land & Building
+    land_area_sqm = Column(Float)
+    building_area_sqm = Column(Float)
+    zoning = Column(String(100))
+    
+    # Acquisition
+    purchase_price = Column(Float)
+    acquisition_costs = Column(Float)  # Legal, due diligence fees
+    
+    # Development
+    construction_cost = Column(Float)
+    construction_duration_months = Column(Integer)
+    contingency_percentage = Column(Float, default=10.0)
+    
+    # Financing
+    equity_percentage = Column(Float, default=30.0)
+    debt_percentage = Column(Float, default=70.0)
+    interest_rate = Column(Float, default=6.0)
+    loan_term_years = Column(Integer, default=25)
+    
+    # Revenue
+    estimated_monthly_rent = Column(Float)
+    rent_growth_rate = Column(Float, default=3.0)  # Annual %
+    occupancy_rate = Column(Float, default=95.0)  # %
+    operating_expense_ratio = Column(Float, default=30.0)  # % of revenue
+    
+    # Exit
+    holding_period_years = Column(Integer, default=10)
+    exit_cap_rate = Column(Float, default=6.5)
+    
+    # Calculated Results (stored after calculation)
+    irr = Column(Float)
+    npv = Column(Float)
+    equity_multiple = Column(Float)
+    cash_on_cash_return = Column(Float)
+    
+    # Relationships
+    scenarios = relationship("DDScenario", back_populates="project", cascade="all, delete-orphan")
+    assumptions = relationship("DDAssumption", back_populates="project", cascade="all, delete-orphan")
+
+
+class DDScenario(Base):
+    """Different scenarios for sensitivity analysis"""
+    __tablename__ = 'dd_scenarios'
+    
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey('dd_projects.id'), nullable=False)
+    
+    scenario_name = Column(String(100), nullable=False)  # Base Case, Optimistic, Pessimistic
+    
+    # Adjusted parameters
+    purchase_price_adjustment = Column(Float, default=0.0)  # % adjustment
+    construction_cost_adjustment = Column(Float, default=0.0)
+    rent_adjustment = Column(Float, default=0.0)
+    occupancy_adjustment = Column(Float, default=0.0)
+    exit_cap_adjustment = Column(Float, default=0.0)
+    
+    # Results for this scenario
+    irr = Column(Float)
+    npv = Column(Float)
+    equity_multiple = Column(Float)
+    
+    # Relationship
+    project = relationship("DDProject", back_populates="scenarios")
+
+
+class DDAssumption(Base):
+    """Custom assumptions and notes for DD project"""
+    __tablename__ = 'dd_assumptions'
+    
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey('dd_projects.id'), nullable=False)
+    
+    category = Column(String(100))  # Cost, Revenue, Risk, Market, etc.
+    assumption_text = Column(Text, nullable=False)
+    source = Column(String(200))  # Data source or reference
+    confidence_level = Column(String(50))  # High, Medium, Low
+    
+    # Relationship
+    project = relationship("DDProject", back_populates="assumptions")
+
+
+class DDCashFlow(Base):
+    """Projected cash flows for DD project"""
+    __tablename__ = 'dd_cashflows'
+    
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey('dd_projects.id'), nullable=False)
+    scenario_id = Column(Integer, ForeignKey('dd_scenarios.id'), nullable=True)
+    
+    period = Column(Integer, nullable=False)  # Year number (0, 1, 2, ...)
+    period_type = Column(String(20), default='annual')  # annual, monthly
+    
+    # Revenue
+    gross_rental_income = Column(Float, default=0.0)
+    vacancy_loss = Column(Float, default=0.0)
+    effective_gross_income = Column(Float, default=0.0)
+    
+    # Expenses
+    operating_expenses = Column(Float, default=0.0)
+    net_operating_income = Column(Float, default=0.0)
+    
+    # Capital
+    capital_expenditure = Column(Float, default=0.0)
+    
+    # Financing
+    debt_service = Column(Float, default=0.0)
+    
+    # Results
+    cash_flow_before_tax = Column(Float, default=0.0)
+    cumulative_cash_flow = Column(Float, default=0.0)
 
 
 # ============================================================================
@@ -1689,6 +1845,257 @@ class DatabaseManager:
         finally:
             if should_close:
                 self.close_session(session)
+    
+    def log_api_usage(self, query_type, model_used, input_tokens, output_tokens, 
+                      estimated_cost, question_hash=None, cached=False, question=None, session=None):
+        """
+        Log API usage for tracking and cost monitoring
+        
+        Args:
+            query_type: Type of query (natural_query, quick_analysis, etc.)
+            model_used: Model name (sonnet-4, haiku, etc.)
+            input_tokens: Number of input tokens used
+            output_tokens: Number of output tokens used
+            estimated_cost: Estimated cost in USD
+            question_hash: Hash of question for similarity detection
+            cached: Whether response was from cache
+            question: Optional user question text
+            session: Optional SQLAlchemy session
+        
+        Returns:
+            APIUsage object
+        """
+        managed_session = session is None
+        if managed_session:
+            session = self.get_session()
+        
+        try:
+            usage = APIUsage(
+                query_type=query_type,
+                model_used=model_used,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                estimated_cost=estimated_cost,
+                question_hash=question_hash,
+                response_cached=cached,
+                user_question=question[:500] if question else None  # Limit length
+            )
+            session.add(usage)
+            session.commit()
+            return usage
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Error logging API usage: {e}")
+            return None
+        finally:
+            if managed_session:
+                session.close()
+
+    def get_monthly_api_usage(self, year=None, month=None, session=None):
+        """
+        Get API usage statistics for a given month
+        
+        Args:
+            year: Year (default: current year)
+            month: Month (default: current month)
+            session: Optional SQLAlchemy session
+        
+        Returns:
+            Dictionary with usage statistics
+        """
+        managed_session = session is None
+        if managed_session:
+            session = self.get_session()
+        
+        try:
+            from datetime import datetime
+            if year is None or month is None:
+                now = datetime.now()
+                year = year or now.year
+                month = month or now.month
+            
+            # Get first and last day of month
+            from calendar import monthrange
+            first_day = datetime(year, month, 1)
+            last_day = datetime(year, month, monthrange(year, month)[1], 23, 59, 59)
+            
+            # Query usage
+            usage_records = session.query(APIUsage).filter(
+                APIUsage.timestamp >= first_day,
+                APIUsage.timestamp <= last_day
+            ).all()
+            
+            # Calculate statistics
+            total_queries = len(usage_records)
+            cached_queries = sum(1 for u in usage_records if u.response_cached)
+            total_cost = sum(u.estimated_cost for u in usage_records)
+            total_input_tokens = sum(u.input_tokens for u in usage_records)
+            total_output_tokens = sum(u.output_tokens for u in usage_records)
+            
+            # By query type
+            by_type = {}
+            for record in usage_records:
+                qtype = record.query_type or 'unknown'
+                if qtype not in by_type:
+                    by_type[qtype] = {'count': 0, 'cost': 0}
+                by_type[qtype]['count'] += 1
+                by_type[qtype]['cost'] += record.estimated_cost
+            
+            return {
+                'total_queries': total_queries,
+                'cached_queries': cached_queries,
+                'api_queries': total_queries - cached_queries,
+                'total_cost': total_cost,
+                'total_input_tokens': total_input_tokens,
+                'total_output_tokens': total_output_tokens,
+                'by_type': by_type,
+                'cache_hit_rate': (cached_queries / total_queries * 100) if total_queries > 0 else 0
+            }
+        except Exception as e:
+            logger.error(f"Error getting monthly API usage: {e}")
+            return {
+                'total_queries': 0,
+                'cached_queries': 0,
+                'api_queries': 0,
+                'total_cost': 0.0,
+                'total_input_tokens': 0,
+                'total_output_tokens': 0,
+                'by_type': {},
+                'cache_hit_rate': 0
+            }
+        finally:
+            if managed_session:
+                session.close()
+
+    def get_similar_questions(self, question_hash, limit=5, session=None):
+        """
+        Find similar questions by hash (for cache suggestion)
+        
+        Args:
+            question_hash: Hash of the question
+            limit: Maximum number of results
+            session: Optional SQLAlchemy session
+        
+        Returns:
+            List of similar APIUsage records
+        """
+        managed_session = session is None
+        if managed_session:
+            session = self.get_session()
+        
+        try:
+            similar = session.query(APIUsage).filter(
+                APIUsage.question_hash == question_hash
+            ).order_by(APIUsage.timestamp.desc()).limit(limit).all()
+            
+            return similar
+        except Exception as e:
+            logger.error(f"Error finding similar questions: {e}")
+            return []
+        finally:
+            if managed_session:
+                session.close()
+
+    # ==================== Due Diligence Methods ====================
+
+    def get_all_dd_projects(self, session=None):
+        """Get all DD projects"""
+        managed_session = session is None
+        if managed_session:
+            session = self.get_session()
+        
+        try:
+            projects = session.query(DDProject).order_by(DDProject.created_at.desc()).all()
+            return projects
+        except Exception as e:
+            logger.error(f"Error getting DD projects: {e}")
+            return []
+        finally:
+            if managed_session:
+                session.close()
+
+    def add_dd_project(self, project_data: dict, session=None):
+        """Add new DD project"""
+        managed_session = session is None
+        if managed_session:
+            session = self.get_session()
+        
+        try:
+            project = DDProject(**project_data)
+            session.add(project)
+            session.commit()
+            session.refresh(project)
+            return project
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Error adding DD project: {e}")
+            return None
+        finally:
+            if managed_session:
+                session.close()
+
+    def update_dd_project(self, project_id: int, project_data: dict, session=None):
+        """Update DD project"""
+        managed_session = session is None
+        if managed_session:
+            session = self.get_session()
+        
+        try:
+            project = session.query(DDProject).filter(DDProject.id == project_id).first()
+            if project:
+                for key, value in project_data.items():
+                    if hasattr(project, key):
+                        setattr(project, key, value)
+                session.commit()
+                session.refresh(project)
+            return project
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Error updating DD project: {e}")
+            return None
+        finally:
+            if managed_session:
+                session.close()
+
+    def delete_dd_project(self, project_id: int, session=None):
+        """Delete DD project"""
+        managed_session = session is None
+        if managed_session:
+            session = self.get_session()
+        
+        try:
+            project = session.query(DDProject).filter(DDProject.id == project_id).first()
+            if project:
+                session.delete(project)
+                session.commit()
+                return True
+            return False
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Error deleting DD project: {e}")
+            return False
+        finally:
+            if managed_session:
+                session.close()
+
+    def get_dd_project_by_id(self, project_id: int, session=None):
+        """Get DD project by ID with relationships"""
+        managed_session = session is None
+        if managed_session:
+            session = self.get_session()
+        
+        try:
+            project = session.query(DDProject).options(
+                joinedload(DDProject.scenarios),
+                joinedload(DDProject.assumptions)
+            ).filter(DDProject.id == project_id).first()
+            return project
+        except Exception as e:
+            logger.error(f"Error getting DD project: {e}")
+            return None
+        finally:
+            if managed_session:
+                session.close()
 
 
 # ============================================================================
