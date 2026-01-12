@@ -94,11 +94,33 @@ with tab1:
                 # Add to history
                 st.session_state.chat_history.append({
                     'question': user_question,
-                    'answer': answer,
-                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    'answer': answer.get('answer', 'Error'),
+                    'metadata': answer
                 })
                 
-                st.success("✅ Got answer!")
+                # Display result based on type
+                if answer.get('cached'):
+                    st.success("✅ Answer retrieved from cache (instant & free!)")
+                elif answer.get('error'):
+                    st.error("❌ Error occurred")
+                else:
+                    model_emoji = "🚀" if answer.get('model') == 'sonnet' else "⚡"
+                    model_name = answer.get('model', 'AI').title()
+                    cost = answer.get('cost', 0)
+                    
+                    st.success(f"✅ Answer from Claude {model_name} {model_emoji}")
+                    
+                    # Show cost info
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.caption(f"💰 Cost: ${cost:.4f}")
+                    with col2:
+                        st.caption(f"📊 Tokens: {answer.get('input_tokens',0)+answer.get('output_tokens',0)}")
+                    with col3:
+                        if answer.get('model') == 'haiku':
+                            st.caption("⚡ Optimized for cost")
+                        else:
+                            st.caption("🚀 Full analysis")
                 
             except Exception as e:
                 st.error(f"❌ Error: {e}")
@@ -116,7 +138,15 @@ with tab1:
                 st.write("**Claude's Answer:**")
                 st.write(chat['answer'])
                 
-                st.caption(f"Asked on: {chat['timestamp']}")
+                # Show metadata if available
+                if 'metadata' in chat and chat['metadata']:
+                    metadata = chat['metadata']
+                    if metadata.get('cached'):
+                        st.caption("✅ From cache (free)")
+                    elif not metadata.get('error'):
+                        cost = metadata.get('cost', 0)
+                        model = metadata.get('model', 'unknown')
+                        st.caption(f"💰 ${cost:.4f} | Model: {model.title()}")
         
         # Clear history button
         if st.button("🗑️ Clear History"):
@@ -142,7 +172,10 @@ with tab2:
                     result = assistant.analyze_cash_flow()
                     st.write("---")
                     st.write("**Analysis:**")
-                    st.write(result)
+                    st.write(result.get('answer', result))
+                    
+                    if not result.get('cached', False) and not result.get('error'):
+                        st.caption(f"💰 ${result.get('cost', 0):.4f} | ⚡ {result.get('model', 'haiku').title()} model")
                 except Exception as e:
                     st.error(f"Error: {e}")
         
@@ -157,7 +190,10 @@ with tab2:
                     result = assistant.identify_trends()
                     st.write("---")
                     st.write("**Trends:**")
-                    st.write(result)
+                    st.write(result.get('answer', result))
+                    
+                    if not result.get('cached', False) and not result.get('error'):
+                        st.caption(f"💰 ${result.get('cost', 0):.4f} | ⚡ {result.get('model', 'haiku').title()} model")
                 except Exception as e:
                     st.error(f"Error: {e}")
     
@@ -171,7 +207,10 @@ with tab2:
                     result = assistant.compare_projects()
                     st.write("---")
                     st.write("**Comparison:**")
-                    st.write(result)
+                    st.write(result.get('answer', result))
+                    
+                    if not result.get('cached', False) and not result.get('error'):
+                        st.caption(f"💰 ${result.get('cost', 0):.4f} | ⚡ {result.get('model', 'haiku').title()} model")
                 except Exception as e:
                     st.error(f"Error: {e}")
         
@@ -186,21 +225,80 @@ with tab2:
                     result = assistant.suggest_actions()
                     st.write("---")
                     st.write("**Recommendations:**")
-                    st.write(result)
+                    st.write(result.get('answer', result))
+                    
+                    if not result.get('cached', False) and not result.get('error'):
+                        st.caption(f"💰 ${result.get('cost', 0):.4f} | ⚡ {result.get('model', 'haiku').title()} model")
                 except Exception as e:
                     st.error(f"Error: {e}")
 
 # ==================== Sidebar Info ====================
 with st.sidebar:
+    st.header("📊 Session Statistics")
+    
+    # 获取session统计
+    if 'ai_assistant' in st.session_state:
+        assistant = st.session_state.ai_assistant
+        stats = assistant.get_session_stats()
+        
+        # 显示统计
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric(
+                "Queries",
+                stats['queries'],
+                help="API calls this session"
+            )
+            st.metric(
+                "Cached",
+                stats['cached'],
+                f"{stats['cache_rate']:.0f}%",
+                help="Cache hit rate"
+            )
+        
+        with col2:
+            st.metric(
+                "Cost",
+                f"${stats['cost']:.3f}",
+                help="Estimated cost this session"
+            )
+            savings = stats['cached'] * 0.022
+            st.metric(
+                "Saved",
+                f"${savings:.3f}",
+                help="Savings from cache"
+            )
+        
+        # 成本提示
+        if stats['cost'] > 0.50:
+            st.warning("⚠️ Session cost > $0.50")
+        elif stats['cost'] > 0:
+            st.success(f"💡 {stats['queries']} queries for ${stats['cost']:.3f}")
+        
+        # 优化提示
+        with st.expander("💡 Cost Optimization Tips"):
+            st.write("**Active Optimizations:**")
+            st.write("✅ Smart caching (instant, free)")
+            st.write("✅ Auto model selection (Haiku/Sonnet)")
+            st.write("✅ Minimal context for simple queries")
+            st.write("✅ Reduced historical data")
+            st.write(f"\n**This Session:**")
+            st.write(f"- Average: ${stats['cost']/max(stats['queries'],1):.4f}/query")
+            st.write(f"- Cache rate: {stats['cache_rate']:.0f}%")
+    else:
+        st.info("Start a conversation to see statistics")
+    
+    st.write("---")
+    
     st.header("ℹ️ About AI Assistant")
     
-    st.write("**Powered by Claude Sonnet 4**")
+    st.write("**Powered by Claude (Sonnet 4 & Haiku)**")
     st.write("This assistant has access to your:")
     st.write("- 💰 Cash balance and flow")
     st.write("- 📊 Asset portfolio")
     st.write("- 🏗️ Active projects")
     st.write("- 💳 Recent transactions")
-    st.write("- 📈 6-month trends")
+    st.write("- 📈 3-month trends")
     
     st.write("---")
     
@@ -225,8 +323,9 @@ with st.sidebar:
     st.write("---")
     
     # API usage info
-    st.caption("💡 Each query uses ~1,000-2,000 tokens")
-    st.caption("⚡ Responses typically take 3-10 seconds")
+    st.caption("💡 Smart caching reduces costs")
+    st.caption("⚡ Haiku model used for simple queries (12x cheaper)")
+    st.caption("📊 Responses typically take 3-10 seconds")
     
     st.markdown("---")
     st.markdown("*© 2025 Gilbert Industrial Real Estate Development | Brisbane, Queensland, Australia*")
