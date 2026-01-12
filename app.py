@@ -86,11 +86,9 @@ def get_database_connection():
         return None
 
 
-@st.cache_data(ttl=3600)
 def get_portfolio_metrics(_session):
     """
     Calculate portfolio metrics from database
-    缓存1小时，减少数据库查询频率
     
     Returns:
         dict: Portfolio metrics including asset count, total value, and active projects
@@ -140,11 +138,9 @@ def get_portfolio_metrics(_session):
         }
 
 
-@st.cache_data(ttl=300)
 def get_recent_transactions(session, limit=5):
     """
     Get recent transactions from database
-    缓存5分钟，因为交易数据更新较频繁
     
     Args:
         session: Database session
@@ -165,10 +161,8 @@ def get_recent_transactions(session, limit=5):
         return []
 
 
-@st.cache_data(ttl=3600)
 def get_portfolio_trend(_session, months=6):
     """获取投资组合趋势数据
-    缓存1小时，趋势数据变化较慢
     """
     try:
         assets = _session.query(Asset).all()
