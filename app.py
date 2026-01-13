@@ -403,92 +403,94 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.markdown(f"### 🏢 {t('app.title')}")
-        st.markdown(f"**{t('app.version')}:** v0.2-prod")
-        st.markdown(f"**{t('app.developer')}:** Gilbert - Brisbane")
+        # Logo和标题
+        st.markdown("### 🏢 Industrial RE")
+        st.caption("Professional Asset Management Platform")
         st.markdown("---")
-        st.markdown(f"#### {t('common.status')}")
         
-        # Check database connection
+        # 导航分组
+        st.markdown("#### 📊 PORTFOLIO MANAGEMENT")
+        st.caption("Core business operations")
+        st.markdown("---")
+        
+        st.markdown("#### 🤖 DECISION SUPPORT")
+        st.caption("AI-powered analysis")
+        st.markdown("---")
+        
+        # 状态面板
+        st.markdown("#### 📡 System Status")
         if DB_AVAILABLE:
             db_manager = get_database_connection()
             if db_manager:
-                st.success(f"✅ {t('app.database_connected')}")
-                st.info(f"📊 {t('app.displaying_live_data')}")
+                st.success("✅ Database Connected")
+                st.info("📊 Displaying Live Data")
             else:
-                st.error(f"❌ {t('app.database_connection_failed')}")
+                st.error("❌ Database Connection Failed")
         else:
-            st.error(f"❌ {t('app.models_not_available')}")
+            st.error("❌ Models Not Available")
         
+        # 分隔线
         st.markdown("---")
-        st.markdown(f"**{t('common.last_updated')}:** {datetime.now().strftime('%d %b %Y, %H:%M')}")
         
-        # Language switcher
-        st.markdown("---")
-        render_language_switcher_compact()
+        # ========== Developer Mode ==========
         
-        # Theme switcher
-        st.markdown("---")
-        theme_options = [t('common.light'), t('common.dark')]
-        theme_mode = st.selectbox(
-            f"🎨 {t('app.theme')}",
-            theme_options,
-            index=0,
-            key="theme_selector"
-        )
+        # 开发者模式（可折叠）
+        dev_mode = st.checkbox("🔧 Developer Mode", value=False, key="dev_mode")
         
-        # Check if dark theme is selected (compare with translated text)
-        if theme_mode == t('common.dark'):
-            st.markdown(generate_css('dark'), unsafe_allow_html=True)
-        
-        # Developer Mode (hidden)
-        st.markdown("---")
-        if st.checkbox("Developer Mode", value=False, key="dev_mode"):
-            st.caption("🔧 Debug tools enabled")
+        if dev_mode:
+            st.caption("Debug tools enabled")
             
-            with st.expander("System Info"):
-                st.code(f"""
-Python: {sys.version}
+            # 系统信息
+            with st.expander("📊 System Info", expanded=False):
+                st.code(f"""Python: {sys.version.split()[0]}
 Streamlit: {st.__version__}
 Database: {db.db_path}
-Tables: {len(Base.metadata.tables)}
-                """)
+Tables: {len(Base.metadata.tables)}""")
             
-            # 数据库重建按钮
-            with st.expander("⚠️ Database Management", expanded=False):
-                st.warning("**Warning:** This will delete all existing data!")
+            # 数据库管理
+            with st.expander("🗄️ Database Management", expanded=False):
+                st.error("⚠️ **Warning:** Rebuild will delete all existing data!")
                 
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    if st.button("🔍 Check Structure", width='stretch'):
+                    if st.button("🔍 Check Schema", width='stretch'):
                         from sqlalchemy import inspect
                         
                         inspector = inspect(db.engine)
                         
-                        st.write("**Tables:**")
+                        st.write("**Current Tables:**")
                         for table in inspector.get_table_names():
                             cols = [c['name'] for c in inspector.get_columns(table)]
-                            st.write(f"- {table}: {len(cols)} columns")
+                            st.text(f"{table}: {len(cols)} columns")
+                            
+                            # 显示前5个列名
+                            if len(cols) > 0:
+                                st.caption(f"  {', '.join(cols[:5])}...")
                 
                 with col2:
-                    if st.button("🔄 Rebuild Database", type="primary", width='stretch'):
+                    if st.button("🔄 Rebuild Now", type="primary", width='stretch'):
                         try:
                             from models.database import Base
+                            from sqlalchemy import create_engine
                             
                             # 删除所有表
                             Base.metadata.drop_all(db.engine)
+                            st.success("✅ Dropped old tables")
                             
                             # 重新创建
                             Base.metadata.create_all(db.engine)
+                            st.success("✅ Created new tables")
                             
-                            st.success("✅ Database rebuilt successfully!")
-                            st.info("Please refresh the page (F5)")
+                            st.balloons()
+                            st.info("🔄 Please refresh the page (press F5 or Cmd+R)")
                             
                         except Exception as e:
-                            st.error(f"❌ Error: {e}")
+                            st.error(f"❌ Rebuild failed: {e}")
+                            st.code(str(e))
         
-        # Version info
+        # ========== 原有的底部信息 ==========
+        
         st.markdown("---")
         st.caption("Version 1.4 Professional")
         st.caption(f"Last updated: {datetime.now().strftime('%b %d, %Y')}")
