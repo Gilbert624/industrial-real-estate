@@ -92,6 +92,17 @@
     "report_error": "报告生成出错"
   },
   
+  "dashboard": {
+    "portfolio_overview": "投资组合概览",
+    "generate_reports": "生成报告",
+    "portfolio_report_pdf": "投资组合报告（PDF）",
+    "portfolio_report_desc": "包含资产和项目的综合投资组合概览",
+    "generate_pdf_report": "生成PDF报告",
+    "financial_report_excel": "财务报告（Excel）",
+    "financial_report_desc": "包含多个工作表的详细财务数据",
+    "generate_excel_report": "生成Excel报告"
+  },
+  
   "assets": {
     "title": "资产管理",
     "subtitle": "管理您的工业物业投资组合",

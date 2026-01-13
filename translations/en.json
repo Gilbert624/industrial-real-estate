@@ -92,6 +92,17 @@
     "report_error": "Error generating report"
   },
   
+  "dashboard": {
+    "portfolio_overview": "Portfolio Overview",
+    "generate_reports": "Generate Reports",
+    "portfolio_report_pdf": "Portfolio Report (PDF)",
+    "portfolio_report_desc": "Comprehensive portfolio overview including assets and projects",
+    "generate_pdf_report": "Generate PDF Report",
+    "financial_report_excel": "Financial Report (Excel)",
+    "financial_report_desc": "Detailed financial data with multiple worksheets",
+    "generate_excel_report": "Generate Excel Report"
+  },
+  
   "assets": {
     "title": "Assets Management",
     "subtitle": "Manage your industrial property portfolio",

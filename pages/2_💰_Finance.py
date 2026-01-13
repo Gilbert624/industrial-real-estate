@@ -7,7 +7,7 @@ Developer: Gilbert - Brisbane, QLD
 
 import streamlit as st
 import plotly.graph_objects as go
-from models.database import DatabaseManager, TransactionType
+from models.database import DatabaseManager
 from datetime import datetime, date
 import pandas as pd
 import time
@@ -30,7 +30,7 @@ st.markdown(generate_css('light'), unsafe_allow_html=True)
 def get_database():
     """Get cached database connection"""
     try:
-        return DatabaseManager('sqlite:///industrial_real_estate.db')
+        return DatabaseManager('industrial_real_estate.db')
     except Exception as e:
         st.error(f"Database connection error: {e}")
         return None
@@ -252,7 +252,7 @@ def format_transactions_dataframe(transactions):
     data = []
     for trans in transactions:
         # Format transaction type
-        type_display = trans.transaction_type.value.replace('_', ' ').title()
+        type_display = str(trans.transaction_type).replace('_', ' ').title()
         
         # Format category
         category = trans.category or (trans.expense_category.value.replace('_', ' ').title() if trans.expense_category else 'N/A')
@@ -320,7 +320,7 @@ def main():
             type_options = ["Income", "Expense"]
             type_index = 0
             if editing and transaction:
-                type_index = 0 if transaction.transaction_type == TransactionType.INCOME else 1
+                type_index = 0 if transaction.transaction_type == 'Income' else 1
             
             transaction_type = st.radio(
                 f"{t('finance.transaction_type')}*",
@@ -637,9 +637,9 @@ def main():
                         st.write(tx.transaction_date.strftime("%Y-%m-%d"))
                     
                     with row_cols[1]:
-                        type_display = tx.transaction_type.value.replace('_', ' ').title()
+                        type_display = str(tx.transaction_type).replace('_', ' ').title()
                         # Color code: Income = green, Expense = red
-                        if tx.transaction_type == TransactionType.INCOME:
+                        if tx.transaction_type == 'Income':
                             st.markdown(f'<span style="color: #2ecc71;">{type_display}</span>', unsafe_allow_html=True)
                         else:
                             st.markdown(f'<span style="color: #e74c3c;">{type_display}</span>', unsafe_allow_html=True)
@@ -650,7 +650,7 @@ def main():
                     
                     with row_cols[3]:
                         amount_str = f"${abs(float(tx.amount)):,.2f}"
-                        if tx.transaction_type == TransactionType.INCOME:
+                        if tx.transaction_type == 'Income':
                             st.markdown(f'<span style="color: #2ecc71; font-weight: bold;">{amount_str}</span>', unsafe_allow_html=True)
                         else:
                             st.markdown(f'<span style="color: #e74c3c; font-weight: bold;">{amount_str}</span>', unsafe_allow_html=True)
@@ -702,8 +702,8 @@ def main():
                 # Summary stats (based on all transactions, not just current page)
                 st.markdown("---")
                 col1, col2, col3 = st.columns(3)
-                total_income = sum(abs(float(tx.amount)) for tx in transactions if tx.transaction_type == TransactionType.INCOME)
-                total_expense = sum(abs(float(tx.amount)) for tx in transactions if tx.transaction_type == TransactionType.EXPENSE)
+                total_income = sum(abs(float(tx.amount)) for tx in transactions if tx.transaction_type == 'Income')
+                total_expense = sum(abs(float(tx.amount)) for tx in transactions if tx.transaction_type == 'Expense')
                 
                 with col1:
                     st.metric("Total Income", f"${total_income:,.2f}")

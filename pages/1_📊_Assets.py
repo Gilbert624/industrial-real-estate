@@ -15,8 +15,7 @@ from config.i18n import t, get_current_language
 # Import database models
 try:
     from models.database import (
-        DatabaseManager, Asset, Project, RentalIncome,
-        AssetType, AssetStatus
+        DatabaseManager, Asset, Project, Transaction
     )
     DB_AVAILABLE = True
 except ImportError as e:
@@ -38,7 +37,7 @@ st.markdown(generate_css('light'), unsafe_allow_html=True)
 def get_database():
     """Get cached database connection"""
     try:
-        return DatabaseManager('sqlite:///industrial_real_estate.db')
+        return DatabaseManager('industrial_real_estate.db')
     except Exception as e:
         st.error(f"Database connection error: {e}")
         return None
@@ -56,11 +55,13 @@ def get_filter_options(session):
         regions = session.query(Asset.region).distinct().all()
         region_list = ['All'] + [r[0] for r in regions if r[0]]
         
-        # Get all asset types from enum
-        type_list = ['All'] + [t.value for t in AssetType]
+        # Get unique asset types from database
+        asset_types = session.query(Asset.asset_type).distinct().all()
+        type_list = ['All'] + [t[0] for t in asset_types if t[0]]
         
-        # Get all asset statuses from enum
-        status_list = ['All'] + [s.value for s in AssetStatus]
+        # Get unique asset statuses from database
+        asset_statuses = session.query(Asset.status).distinct().all()
+        status_list = ['All'] + [s[0] for s in asset_statuses if s[0]]
         
         return {
             'regions': region_list,
@@ -93,18 +94,12 @@ def apply_filters(query, region, asset_type, status):
         query = query.filter(Asset.region == region)
     
     if asset_type != 'All':
-        # Convert string back to enum
-        for at in AssetType:
-            if at.value == asset_type:
-                query = query.filter(Asset.asset_type == at)
-                break
+        # Filter by asset_type string
+        query = query.filter(Asset.asset_type == asset_type)
     
     if status != 'All':
-        # Convert string back to enum
-        for s in AssetStatus:
-            if s.value == status:
-                query = query.filter(Asset.status == s)
-                break
+        # Filter by status string
+        query = query.filter(Asset.status == status)
     
     return query
 
@@ -157,11 +152,11 @@ def format_asset_dataframe(assets):
             'Project Name': asset.name,
             'Address': f"{asset.address_line1}, {asset.suburb}",
             'Region': asset.region,
-            'Type': asset.asset_type.value.replace('_', ' ').title(),
+            'Type': str(asset.asset_type).replace('_', ' ').title() if asset.asset_type else 'N/A',
             'Land Area (㎡)': f"{asset.land_area_sqm:,.0f}" if asset.land_area_sqm else 'N/A',
             'Building Area (㎡)': f"{asset.building_area_sqm:,.0f}" if asset.building_area_sqm else 'N/A',
             'Current Valuation': f"${asset.current_valuation:,.2f}" if asset.current_valuation else 'N/A',
-            'Status': asset.status.value.replace('_', ' ').title(),
+            'Status': str(asset.status).replace('_', ' ').title() if asset.status else 'N/A',
             'Purchase Date': asset.purchase_date.strftime('%d %b %Y') if asset.purchase_date else 'N/A'
         })
     
@@ -192,8 +187,8 @@ def display_asset_details(asset, session):
         
         with col2:
             st.markdown("#### 📐 Physical Characteristics")
-            st.write(f"**Type:** {asset.asset_type.value.replace('_', ' ').title()}")
-            st.write(f"**Status:** {asset.status.value.replace('_', ' ').title()}")
+            st.write(f"**Type:** {str(asset.asset_type).replace('_', ' ').title() if asset.asset_type else 'N/A'}")
+            st.write(f"**Status:** {str(asset.status).replace('_', ' ').title() if asset.status else 'N/A'}")
             st.write(f"**Land Area:** {asset.land_area_sqm:,.0f} ㎡" if asset.land_area_sqm else "Land Area: N/A")
             st.write(f"**Building Area:** {asset.building_area_sqm:,.0f} ㎡" if asset.building_area_sqm else "Building Area: N/A")
             if asset.warehouse_area_sqm:
@@ -251,7 +246,7 @@ def display_asset_details(asset, session):
             if projects:
                 st.markdown("#### 🏗️ Associated Projects")
                 for proj in projects:
-                    st.write(f"- **{proj.project_name}** ({proj.status.value})")
+                    st.write(f"- **{proj.project_name}** ({str(proj.status) if proj.status else 'N/A'})")
                     if proj.total_budget:
                         st.write(f"  Budget: ${proj.total_budget:,.2f}")
         except Exception as e:
@@ -259,17 +254,20 @@ def display_asset_details(asset, session):
         
         # Rental information
         try:
-            rentals = session.query(RentalIncome).filter_by(
-                asset_id=asset.id, 
-                is_active=True
-            ).all()
+            # 获取租金收入
+            rentals = session.query(Transaction).filter(
+                Transaction.asset_id == asset.id,
+                Transaction.transaction_type == 'Income',
+                Transaction.category == 'Rental Income'
+            ).order_by(Transaction.date.desc()).all()
             
             if rentals:
-                st.markdown("#### 🏢 Active Leases")
+                st.markdown("#### 🏢 Rental Income Transactions")
                 for rental in rentals:
-                    st.write(f"- **Tenant:** {rental.tenant_name}")
-                    st.write(f"  Monthly Rent: ${rental.monthly_rent:,.2f}")
-                    st.write(f"  Lease End: {rental.lease_end_date.strftime('%d %b %Y')}")
+                    st.write(f"- **Date:** {rental.date.strftime('%d %b %Y') if rental.date else 'N/A'}")
+                    st.write(f"  Amount: ${abs(float(rental.amount)):,.2f}")
+                    if rental.description:
+                        st.write(f"  Description: {rental.description}")
         except Exception as e:
             st.error(f"Error loading rental info: {e}")
         
@@ -383,7 +381,7 @@ def main():
                 # Find current type index
                 current_type_display = None
                 if asset:
-                    asset_type_value = asset.asset_type.value if asset.asset_type else None
+                    asset_type_value = str(asset.asset_type) if asset.asset_type else None
                     for display, value in asset_type_map.items():
                         if value == asset_type_value:
                             current_type_display = display
@@ -401,7 +399,7 @@ def main():
                 # Find current status index
                 current_status_display = None
                 if asset:
-                    status_value = asset.status.value if asset.status else None
+                    status_value = str(asset.status) if asset.status else None
                     for display, value in status_map.items():
                         if value == status_value:
                             current_status_display = display
@@ -681,7 +679,7 @@ def main():
                 # Asset type breakdown
                 type_counts = {}
                 for asset in assets:
-                    asset_type = asset.asset_type.value.replace('_', ' ').title()
+                    asset_type = str(asset.asset_type).replace('_', ' ').title() if asset.asset_type else 'N/A'
                     type_counts[asset_type] = type_counts.get(asset_type, 0) + 1
                 
                 st.markdown("#### Asset Types")
@@ -702,7 +700,7 @@ def main():
                 # Status breakdown
                 status_counts = {}
                 for asset in assets:
-                    status = asset.status.value.replace('_', ' ').title()
+                    status = str(asset.status).replace('_', ' ').title() if asset.status else 'N/A'
                     status_counts[status] = status_counts.get(status, 0) + 1
                 
                 st.markdown("#### By Status")
@@ -717,7 +715,7 @@ def main():
     
     finally:
         if session:
-            db.close_session(session)
+            session.close()
 
 
 if __name__ == "__main__":

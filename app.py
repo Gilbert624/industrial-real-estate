@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import pandas as pd
 import os
 from datetime import datetime, timedelta
-from sqlalchemy import func
+from sqlalchemy import func, inspect
 
 # Theme imports
 from config.theme import generate_css, LIGHT_THEME, DARK_THEME
@@ -29,8 +29,17 @@ get_current_language = get_language
 # Import database models
 try:
     from models.database import (
-        DatabaseManager, Asset, Project, Transaction, RentalIncome,
-        AssetType, AssetStatus, ProjectStatus, TransactionType, Base
+        Base,
+        Asset,
+        Transaction,
+        Project,
+        DDProject,
+        MarketIndicator,
+        DevelopmentProject,
+        RentalData,
+        InfrastructureProject,
+        CompetitorAnalysis,
+        DatabaseManager
     )
     from sqlalchemy import create_engine
     DB_AVAILABLE = True
@@ -43,10 +52,44 @@ except ImportError as e:
 @st.cache_resource
 def init_database():
     """Initialize database and create all tables"""
+    from models.database import (
+        Base, 
+        Asset, 
+        Transaction, 
+        Project, 
+        DDProject,
+        MarketIndicator,
+        DevelopmentProject,
+        RentalData,
+        InfrastructureProject,
+        CompetitorAnalysis
+    )
+    
     db = DatabaseManager()
     try:
         # 创建所有表
         Base.metadata.create_all(db.engine)
+        
+        # 验证表是否创建
+        inspector = inspect(db.engine)
+        tables = inspector.get_table_names()
+        print(f"✅ Database tables created: {tables}")
+
+        # 检查新表
+        required_tables = [
+            'market_indicators',
+            'development_projects', 
+            'rental_data',
+            'infrastructure_projects',
+            'competitor_analysis'
+        ]
+
+        missing_tables = [t for t in required_tables if t not in tables]
+        if missing_tables:
+            print(f"⚠️ Missing tables: {missing_tables}")
+        else:
+            print("✅ All market intelligence tables created")
+        
         return db
     except Exception as e:
         st.error(f"Database initialization failed: {e}")
@@ -79,7 +122,7 @@ def get_database_connection():
     Uses st.cache_resource to maintain single connection across reruns
     """
     try:
-        db_manager = DatabaseManager('sqlite:///industrial_real_estate.db')
+        db_manager = DatabaseManager('industrial_real_estate.db')
         return db_manager
     except Exception as e:
         st.error(f"❌ Failed to connect to database: {e}")
@@ -102,18 +145,13 @@ def get_portfolio_metrics(_session):
             func.sum(Asset.current_valuation)
         ).scalar() or 0
         
-        # Previous valuation (using purchase price as proxy for change calculation)
-        previous_valuation = _session.query(
-            func.sum(Asset.purchase_price)
-        ).scalar() or 0
-        
-        # Calculate change
-        valuation_change = total_valuation - previous_valuation if previous_valuation else 0
+        # Calculate change (using a simple approach - in real app you'd track historical values)
+        valuation_change = 0
         
         # Active projects (not completed or cancelled)
+        # Note: Project model doesn't have is_active field, using status field instead
         active_projects = _session.query(func.count(Project.id)).filter(
-            Project.is_active == True,
-            Project.status.notin_([ProjectStatus.COMPLETED, ProjectStatus.CANCELLED])
+            Project.status.notin_(['Completed', 'Cancelled', 'COMPLETED', 'CANCELLED'])
         ).scalar() or 0
         
         # Total projects for change calculation
@@ -140,19 +178,35 @@ def get_portfolio_metrics(_session):
 
 def get_recent_transactions(session, limit=5):
     """
-    Get recent transactions from database
+    Get recent transactions from database with asset names
     
     Args:
         session: Database session
         limit: Number of transactions to retrieve
         
     Returns:
-        list: Recent transactions
+        list: Recent transactions with asset info
     """
     try:
+        # Query transactions
         transactions = session.query(Transaction).order_by(
-            Transaction.transaction_date.desc()
+            Transaction.date.desc()
         ).limit(limit).all()
+        
+        # Since Transaction doesn't have a relationship defined, we'll query assets separately
+        # Create a dict to map asset_id to asset for quick lookup
+        asset_ids = [t.asset_id for t in transactions if t.asset_id]
+        assets_dict = {}
+        if asset_ids:
+            assets = session.query(Asset).filter(Asset.id.in_(asset_ids)).all()
+            assets_dict = {asset.id: asset for asset in assets}
+        
+        # Attach asset objects to transactions for compatibility
+        for trans in transactions:
+            if trans.asset_id and trans.asset_id in assets_dict:
+                trans.asset = assets_dict[trans.asset_id]
+            else:
+                trans.asset = None
         
         return transactions
     
@@ -235,21 +289,25 @@ def display_transactions(transactions):
     trans_data = []
     
     for trans in transactions:
-        # Determine emoji based on transaction type
-        if trans.transaction_type == TransactionType.INCOME:
+        # Determine emoji based on transaction type (transaction_type is a string, not an enum)
+        trans_type_lower = (trans.transaction_type or '').lower()
+        if 'income' in trans_type_lower:
             type_emoji = "📈"
-        elif trans.transaction_type == TransactionType.EXPENSE:
+        elif 'expense' in trans_type_lower:
             type_emoji = "📉"
-        elif trans.transaction_type == TransactionType.ASSET_PURCHASE:
+        elif 'purchase' in trans_type_lower or 'asset' in trans_type_lower:
             type_emoji = "🏢"
         else:
             type_emoji = "💰"
         
+        # Format transaction type for display
+        type_display = (trans.transaction_type or '').replace('_', ' ').title()
+        
         trans_data.append({
-            'Date': trans.transaction_date.strftime('%d %b %Y'),
-            'Type': f"{type_emoji} {trans.transaction_type.value.replace('_', ' ').title()}",
+            'Date': trans.date.strftime('%d %b %Y') if trans.date else 'N/A',
+            'Type': f"{type_emoji} {type_display}",
             'Amount': f"${trans.amount:,.2f}",
-            'Description': trans.description[:60] + '...' if len(trans.description) > 60 else trans.description,
+            'Description': (trans.description or '')[:60] + '...' if trans.description and len(trans.description) > 60 else (trans.description or 'N/A'),
             'Asset': trans.asset.name if trans.asset else 'N/A'
         })
     
@@ -383,7 +441,7 @@ def main():
         return
     
     # Get database session
-    session = db_manager.get_session()
+    session = db_manager.Session()
     
     try:
         st.markdown("---")
@@ -523,7 +581,7 @@ def main():
     finally:
         # Always close the session
         if session:
-            db_manager.close_session(session)
+            session.close()
     
     # Footer
     st.markdown("---")

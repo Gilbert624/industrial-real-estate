@@ -7,7 +7,7 @@ Developer: Gilbert - Brisbane, QLD
 
 import streamlit as st
 import plotly.graph_objects as go
-from models.database import DatabaseManager, ProjectStatus
+from models.database import DatabaseManager
 from datetime import datetime, timedelta
 import pandas as pd
 import json
@@ -30,38 +30,10 @@ st.markdown(generate_css('light'), unsafe_allow_html=True)
 def get_database():
     """Get cached database connection"""
     try:
-        return DatabaseManager('sqlite:///industrial_real_estate.db')
+        return DatabaseManager('industrial_real_estate.db')
     except Exception as e:
         st.error(f"Database connection error: {e}")
         return None
-
-
-def status_to_display(status_enum):
-    """Convert ProjectStatus enum to display string"""
-    status_map = {
-        ProjectStatus.PLANNING: "Planning",
-        ProjectStatus.APPROVAL_PENDING: "Approval Pending",
-        ProjectStatus.APPROVED: "Approved",
-        ProjectStatus.CONSTRUCTION: "Construction",
-        ProjectStatus.COMPLETED: "Completed",
-        ProjectStatus.ON_HOLD: "On Hold",
-        ProjectStatus.CANCELLED: "Cancelled"
-    }
-    return status_map.get(status_enum, status_enum.value.title())
-
-
-def display_to_status(status_str):
-    """Convert display string to ProjectStatus enum"""
-    status_map = {
-        "Planning": ProjectStatus.PLANNING,
-        "Approved": ProjectStatus.APPROVED,
-        "Construction": ProjectStatus.CONSTRUCTION,
-        "Completed": ProjectStatus.COMPLETED,
-        "On Hold": ProjectStatus.ON_HOLD,
-        "Approval Pending": ProjectStatus.APPROVAL_PENDING,
-        "Cancelled": ProjectStatus.CANCELLED
-    }
-    return status_map.get(status_str, ProjectStatus.PLANNING)
 
 
 def get_completion_percentage(project):
@@ -214,8 +186,9 @@ def main():
                     t('projects.project_status.on_hold')
                 ]
                 if project:
-                    current_status_display = status_to_display(project.status)
-                    # Map enum to translation
+                    # Use status directly as string
+                    current_status_display = str(project.status)
+                    # Map status string to translation
                     status_map = {
                         "Planning": t('projects.project_status.planning'),
                         "Approved": t('projects.project_status.approved'),
@@ -463,7 +436,7 @@ def main():
                 cols[0].write(proj.project_name)
                 
                 # Status (with color emoji)
-                status_display = status_to_display(proj.status)
+                status_display = str(proj.status)
                 emoji, color = status_display_map.get(status_display, ("⚪", "gray"))
                 cols[1].write(f"{emoji} {status_display}")
                 
