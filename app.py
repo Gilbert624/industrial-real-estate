@@ -509,25 +509,85 @@ Tables: {len(Base.metadata.tables)}""")
         st.info("Ensure the 'models' directory is present and contains database.py")
         return
     
-    db_manager = get_database_connection()
-    if not db_manager:
-        st.error(f"⚠️ {t('app.database_connection_failed')}")
-        st.info("Run: python -m models.init_db --sample")
-        return
+    st.markdown("---")
     
-    # Get database session
-    session = db_manager.get_session()
+    # ========== 强制刷新数据（解决缓存问题）==========
     
+    # 清除查询缓存，获取最新数据
+    if 'last_refresh' not in st.session_state:
+        st.session_state.last_refresh = datetime.now()
+    
+    # 获取最新的数据库会话（不使用缓存）
+    fresh_db = DatabaseManager()
+    
+    # ========== Portfolio Overview ==========
+    
+    st.markdown(f"## 📊 {t('home.portfolio_overview')}")
+    
+    # 使用 fresh_db 而不是 db 来获取数据
     try:
-        st.markdown("---")
+        # 获取最新数据
+        session = fresh_db.get_session()
+        try:
+            # 获取资产总数
+            total_assets = session.query(func.count(Asset.id)).scalar() or 0
+            
+            # 计算总价值（使用 fresh_db）
+            total_value = session.query(func.sum(Asset.current_valuation)).scalar() or 0
+            
+            # 获取活跃项目数
+            active_projects = fresh_db.get_active_projects_count(session)
+            
+            # 获取现金余额
+            cash_balance = fresh_db.get_cash_balance()
+            
+            # 显示指标
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric(
+                    label=t('home.total_assets'),
+                    value=total_assets,
+                    delta=None
+                )
+            
+            with col2:
+                st.metric(
+                    label=t('home.portfolio_value'),
+                    value=f"${total_value/1_000_000:.1f}M AUD" if total_value > 0 else "$0.0M AUD",
+                    delta=None
+                )
+            
+            with col3:
+                st.metric(
+                    label=t('home.active_projects'),
+                    value=active_projects,
+                    delta=f"↑ {active_projects} Total" if active_projects > 0 else None
+                )
+            
+            with col4:
+                st.metric(
+                    label=t('home.cash_balance'),
+                    value=f"${cash_balance/1_000_000:.1f}M AUD" if abs(cash_balance) > 1_000_000 else f"${cash_balance:,.0f} AUD",
+                    delta=None
+                )
+        finally:
+            session.close()
+    
+    except Exception as e:
+        st.error(f"Error calculating metrics: {e}")
         
-        # Portfolio Overview Section
-        st.markdown(f"### 📊 {t('dashboard.portfolio_overview')}")
-        
-        with st.spinner(f"{t('common.loading')}"):
-            metrics = get_portfolio_metrics(session)
-            display_metrics(metrics)
-        
+        # 显示默认值
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric(label=t('home.total_assets'), value=0)
+        with col2:
+            st.metric(label=t('home.portfolio_value'), value="$0.0M AUD")
+        with col3:
+            st.metric(label=t('home.active_projects'), value=0)
+        with col4:
+            st.metric(label=t('home.cash_balance'), value="$0 AUD")
+    
         # Reports Section
         st.write("---")
         st.subheader(f"📊 {t('dashboard.generate_reports')}")
@@ -605,8 +665,15 @@ Tables: {len(Base.metadata.tables)}""")
         st.markdown(f"### 📈 {t('home.portfolio_value')} {t('common.trend')}")
         
         with st.spinner(t('common.loading')):
-            dates, values = get_portfolio_trend(session)
-            display_portfolio_chart(dates, values)
+            try:
+                session = fresh_db.get_session()
+                try:
+                    dates, values = get_portfolio_trend(session)
+                    display_portfolio_chart(dates, values)
+                finally:
+                    session.close()
+            except Exception as e:
+                st.error(f"Error loading trend data: {e}")
         
         st.markdown("---")
         
@@ -614,8 +681,15 @@ Tables: {len(Base.metadata.tables)}""")
         st.markdown(f"### 💰 {t('finance.recent_transactions')}")
         
         with st.spinner(t('common.loading')):
-            transactions = get_recent_transactions(session, limit=5)
-            display_transactions(transactions)
+            try:
+                session = fresh_db.get_session()
+                try:
+                    transactions = get_recent_transactions(session, limit=5)
+                    display_transactions(transactions)
+                finally:
+                    session.close()
+            except Exception as e:
+                st.error(f"Error loading transactions: {e}")
         
         st.markdown("---")
         
@@ -632,11 +706,24 @@ Tables: {len(Base.metadata.tables)}""")
         
         with col2:
             st.markdown("#### 🔧 System Info")
-            st.markdown(f"""
-            - Database: SQLite
-            - {t('home.total_assets')}: {metrics['total_assets']}
-            - {t('home.active_projects')}: {metrics['total_projects']}
-            """)
+            try:
+                session = fresh_db.get_session()
+                try:
+                    total_assets_count = session.query(func.count(Asset.id)).scalar() or 0
+                    total_projects_count = session.query(func.count(Project.id)).scalar() or 0
+                    st.markdown(f"""
+                    - Database: SQLite
+                    - {t('home.total_assets')}: {total_assets_count}
+                    - {t('home.active_projects')}: {total_projects_count}
+                    """)
+                finally:
+                    session.close()
+            except Exception:
+                st.markdown(f"""
+                - Database: SQLite
+                - {t('home.total_assets')}: N/A
+                - {t('home.active_projects')}: N/A
+                """)
         
         with col3:
             st.markdown("#### 📍 Locations")
@@ -652,11 +739,6 @@ Tables: {len(Base.metadata.tables)}""")
         import traceback
         with st.expander("Show Error Details"):
             st.code(traceback.format_exc())
-    
-    finally:
-        # Always close the session
-        if session:
-            db_manager.close_session(session)
     
     # Footer
     st.markdown("---")
