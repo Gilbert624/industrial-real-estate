@@ -372,7 +372,7 @@ def main():
                 
                 acquisition_date = st.date_input(
                     t('assets.acquisition_date'),
-                    value=asset.purchase_date if asset and asset.purchase_date else date.today(),
+                    value=asset.acquisition_date if asset and asset.acquisition_date else date.today(),
                     help="Date of acquisition"
                 )
             
