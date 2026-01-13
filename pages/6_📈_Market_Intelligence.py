@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta
 import time
+import inspect
 from models.database import DatabaseManager
 from utils.market_data_collector import MarketDataCollector
 from config.theme import generate_css
@@ -26,6 +27,28 @@ st.markdown(generate_css('light'), unsafe_allow_html=True)
 
 # 初始化
 db = DatabaseManager()
+
+# 调试：验证DatabaseManager实例
+st.sidebar.markdown("### 🔍 Debug Info")
+st.sidebar.write("DatabaseManager type:", type(db))
+st.sidebar.write("Available methods:", [method for method in dir(db) if not method.startswith('_')])
+
+# 检查关键方法是否存在
+required_methods = [
+    'get_development_projects',
+    'get_rental_data', 
+    'get_competitor_analysis',
+    'add_development_project',
+    'add_rental_data',
+    'add_competitor_analysis'
+]
+
+missing_methods = [m for m in required_methods if not hasattr(db, m)]
+if missing_methods:
+    st.sidebar.error(f"❌ Missing methods: {missing_methods}")
+else:
+    st.sidebar.success("✅ All required methods found")
+
 collector = MarketDataCollector()
 
 # 标题

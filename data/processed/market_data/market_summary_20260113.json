@@ -1,0 +1,127 @@
+{
+  "timestamp": "2026-01-13T09:05:40.599422",
+  "last_updated": "2026-01-13 09:05",
+  "macro_economics": {
+    "gdp": {
+      "current_gdp_growth": 2.1,
+      "quarter": "Q3 2025",
+      "year_on_year": 2.4,
+      "last_updated": "2026-01-13",
+      "source": "ABS",
+      "url": "https://www.abs.gov.au/statistics/economy/national-accounts/australian-national-accounts-national-income-expenditure-and-product"
+    },
+    "unemployment": {
+      "current_rate": 4.1,
+      "previous_month": 4.0,
+      "trend": "stable",
+      "queensland_rate": 4.3,
+      "month": "December 2025",
+      "last_updated": "2026-01-13",
+      "source": "ABS",
+      "url": "https://www.abs.gov.au/statistics/labour/employment-and-unemployment/labour-force-australia"
+    },
+    "building_approvals": {
+      "industrial_approvals_qld": 45,
+      "total_floor_area_sqm": 125000,
+      "month_on_month_change": 8.5,
+      "year_on_year_change": 15.2,
+      "month": "December 2025",
+      "last_updated": "2026-01-13",
+      "source": "ABS",
+      "url": "https://www.abs.gov.au/statistics/industry/building-and-construction/building-approvals-australia"
+    },
+    "oecd_comparison": {
+      "gdp_growth_oecd_avg": 2.0,
+      "australia_gdp_growth": 2.1,
+      "australia_vs_oecd": 0.1,
+      "quarter": "Q3 2025",
+      "last_updated": "2026-01-13",
+      "source": "OECD",
+      "url": "https://data.oecd.org/gdp/quarterly-gdp.htm"
+    }
+  },
+  "financial": {
+    "cash_rate": {
+      "current_rate": 4.35,
+      "previous_rate": 4.35,
+      "change": 0,
+      "decision_date": "2025-12-03",
+      "next_meeting": "2026-02-04",
+      "last_updated": "2026-01-13",
+      "source": "RBA",
+      "url": "https://www.rba.gov.au/statistics/cash-rate/"
+    },
+    "exchange_rates": {
+      "aud_usd": 0.67,
+      "aud_cny": 4.85,
+      "aud_eur": 0.62,
+      "aud_gbp": 0.53,
+      "date": "2026-01-13",
+      "last_updated": "2026-01-13",
+      "source": "RBA",
+      "url": "https://www.rba.gov.au/statistics/frequency/exchange-rates.html"
+    }
+  },
+  "developments": {
+    "qld_approvals": [
+      {
+        "project_name": "Brisbane Port Logistics Hub",
+        "location": "Port of Brisbane",
+        "type": "Industrial Warehouse",
+        "size_sqm": 50000,
+        "status": "Approved",
+        "approval_date": "2025-11-15",
+        "estimated_completion": "2026-12-01"
+      },
+      {
+        "project_name": "Acacia Ridge Distribution Center",
+        "location": "Acacia Ridge",
+        "type": "Logistics Center",
+        "size_sqm": 35000,
+        "status": "Under Review",
+        "approval_date": null,
+        "estimated_completion": "2027-03-01"
+      }
+    ],
+    "infrastructure": [
+      {
+        "project_name": "Brisbane Metro",
+        "region": "Brisbane",
+        "investment": 944000000,
+        "status": "Under Construction",
+        "completion_year": 2025,
+        "impact_on_industrial": "Improved logistics access to CBD"
+      },
+      {
+        "project_name": "Bruce Highway Upgrade",
+        "region": "Brisbane to Sunshine Coast",
+        "investment": 1200000000,
+        "status": "Planning",
+        "completion_year": 2027,
+        "impact_on_industrial": "Enhanced freight corridor"
+      }
+    ],
+    "bcc_applications": [
+      {
+        "application_id": "A005678901",
+        "address": "123 Industrial Way, Acacia Ridge",
+        "description": "Material Change of Use - Industrial Warehouse",
+        "proposed_area_sqm": 15000,
+        "applicant": "XYZ Developments",
+        "status": "Under Assessment",
+        "lodgement_date": "2025-12-01",
+        "decision_date": null
+      },
+      {
+        "application_id": "A005678902",
+        "address": "456 Logistics Rd, Hemmant",
+        "description": "New Industrial Building",
+        "proposed_area_sqm": 25000,
+        "applicant": "ABC Logistics",
+        "status": "Approved",
+        "lodgement_date": "2025-10-15",
+        "decision_date": "2025-12-10"
+      }
+    ]
+  }
+}

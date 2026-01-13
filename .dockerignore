@@ -1,0 +1,56 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Database
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Environment
+.env
+.env.*
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+!README.md
+
+# Deployment scripts
+deploy.sh
+run.sh
+
+# Test files
+test_*.py
+
+# Backup
+*.backup
+*.bak
+backups/
