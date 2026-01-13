@@ -442,10 +442,13 @@ def main():
             
             # 系统信息
             with st.expander("📊 System Info", expanded=False):
-                st.code(f"""Python: {sys.version.split()[0]}
+                try:
+                    st.code(f"""Python: {sys.version.split()[0]}
 Streamlit: {st.__version__}
 Database: {db.db_path}
 Tables: {len(Base.metadata.tables)}""")
+                except Exception as e:
+                    st.error(f"Error displaying system info: {e}")
             
             # 数据库管理
             with st.expander("🗄️ Database Management", expanded=False):
@@ -454,26 +457,26 @@ Tables: {len(Base.metadata.tables)}""")
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    if st.button("🔍 Check Schema", width='stretch'):
-                        from sqlalchemy import inspect
-                        
-                        inspector = inspect(db.engine)
-                        
-                        st.write("**Current Tables:**")
-                        for table in inspector.get_table_names():
-                            cols = [c['name'] for c in inspector.get_columns(table)]
-                            st.text(f"{table}: {len(cols)} columns")
+                    if st.button("🔍 Check Schema", key="check_schema"):
+                        try:
+                            from sqlalchemy import inspect
                             
-                            # 显示前5个列名
-                            if len(cols) > 0:
-                                st.caption(f"  {', '.join(cols[:5])}...")
+                            inspector = inspect(db.engine)
+                            
+                            st.write("**Current Tables:**")
+                            for table in inspector.get_table_names():
+                                cols = [c['name'] for c in inspector.get_columns(table)]
+                                st.text(f"{table}: {len(cols)} columns")
+                                
+                                # 显示前5个列名
+                                if len(cols) > 0:
+                                    st.caption(f"  {', '.join(cols[:5])}...")
+                        except Exception as e:
+                            st.error(f"Error checking schema: {e}")
                 
                 with col2:
-                    if st.button("🔄 Rebuild Now", type="primary", width='stretch'):
+                    if st.button("🔄 Rebuild Now", type="primary", key="rebuild_db"):
                         try:
-                            from models.database import Base
-                            from sqlalchemy import create_engine
-                            
                             # 删除所有表
                             Base.metadata.drop_all(db.engine)
                             st.success("✅ Dropped old tables")
