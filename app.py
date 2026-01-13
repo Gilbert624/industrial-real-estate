@@ -10,11 +10,15 @@ import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
 import os
+import sys
 from datetime import datetime, timedelta
 from sqlalchemy import func, inspect
 
 # Theme imports
-from config.theme import generate_css, LIGHT_THEME, DARK_THEME
+from config.theme import apply_global_theme, generate_css, LIGHT_THEME, DARK_THEME
+
+# Sidebar styling imports
+from config.sidebar_style import get_sidebar_css, render_sidebar_header, render_nav_section, render_status_panel
 
 # Internationalization
 from config.i18n import t, get_language, set_language, get_current_language
@@ -131,19 +135,22 @@ db = init_database()
 
 # Page configuration
 st.set_page_config(
-    page_title="Asset Management System",
-    page_icon="🏢",
+    page_title="Industrial Real Estate Management System",
+    page_icon="▸",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# 应用全局主题（统一左右风格）
+apply_global_theme()
+
+# 应用侧边栏样式
+st.markdown(get_sidebar_css(), unsafe_allow_html=True)
 
 # Production environment security check
 security = get_security_manager()
 if os.getenv('APP_ENV') == 'production':
     security.validate_api_key()
-
-# Apply professional theme
-st.markdown(generate_css('light'), unsafe_allow_html=True)
 
 
 @st.cache_resource
@@ -415,66 +422,56 @@ def display_portfolio_chart(dates, values):
 def main():
     """Main application function"""
     
-    # Sidebar
+    # Sidebar customization
     with st.sidebar:
-        st.markdown(f"### 🏢 {t('app.title')}")
-        st.markdown(f"**{t('app.version')}:** v0.2-prod")
-        st.markdown(f"**{t('app.developer')}:** Gilbert - Brisbane")
-        st.markdown("---")
-        st.markdown(f"#### {t('common.status')}")
+        # Logo和标题
+        render_sidebar_header()
         
-        # Check database connection
-        if DB_AVAILABLE:
-            db_manager = get_database_connection()
-            if db_manager:
-                st.success(f"✅ {t('app.database_connected')}")
-                st.info(f"📊 {t('app.displaying_live_data')}")
-            else:
-                st.error(f"❌ {t('app.database_connection_failed')}")
-        else:
-            st.error(f"❌ {t('app.models_not_available')}")
-        
-        st.markdown("---")
-        st.markdown(f"**{t('common.last_updated')}:** {datetime.now().strftime('%d %b %Y, %H:%M')}")
-        
-        # Language switcher
-        st.markdown("---")
-        render_language_switcher_compact()
-        
-        # Theme switcher
-        st.markdown("---")
-        theme_options = [t('common.light'), t('common.dark')]
-        theme_mode = st.selectbox(
-            f"🎨 {t('app.theme')}",
-            theme_options,
-            index=0,
-            key="theme_selector"
+        # 导航分组：投资组合管理
+        render_nav_section(
+            "Portfolio Management",
+            "Core business operations"
         )
         
-        # Check if dark theme is selected (compare with translated text)
-        if theme_mode == t('common.dark'):
-            st.markdown(generate_css('dark'), unsafe_allow_html=True)
+        # Streamlit会自动在这里渲染：
+        # - app (Dashboard)
+        # - Assets
+        # - Finance
+        # - Projects
         
-        # 管理员调试功能（隐藏）
+        # 导航分组：决策支持
+        render_nav_section(
+            "Decision Support", 
+            "AI-powered analysis"
+        )
+        
+        # Streamlit会自动渲染：
+        # - AI Assistant
+        # - Due Diligence
+        # - Market Intelligence
+        
+        # 状态面板
+        render_status_panel()
+        
+        # 底部信息
         st.markdown("---")
-        with st.expander("🔧 Admin Tools", expanded=False):
-            if st.button("Clear All Cache & Rebuild DB"):
-                st.cache_data.clear()
-                st.cache_resource.clear()
-                
-                # 强制重建数据库
-                try:
-                    from models.database import Base
-                    from sqlalchemy import create_engine
-                    
-                    engine = create_engine(f'sqlite:///{db.db_path}')
-                    Base.metadata.drop_all(engine)
-                    Base.metadata.create_all(engine)
-                    
-                    st.success("✅ Cache cleared and database rebuilt!")
-                    st.info("Please refresh the page (F5)")
-                except Exception as e:
-                    st.error(f"Error: {e}")
+        
+        # 开发者模式（隐藏）
+        if st.checkbox("Developer Mode", value=False, key="dev_mode"):
+            st.caption("🔧 Debug tools enabled")
+            
+            with st.expander("System Info"):
+                st.code(f"""
+Python: {sys.version}
+Streamlit: {st.__version__}
+Database: {db.db_path}
+Tables: {len(Base.metadata.tables)}
+                """)
+        
+        # 版本信息
+        st.caption("Version 1.3 Professional")
+        st.caption(f"Last updated: {datetime.now().strftime('%b %d, %Y')}")
+        st.caption("© 2026 Gilbert · Brisbane")
     
     # Main content
     st.title(f"🏢 {t('app.title')}")

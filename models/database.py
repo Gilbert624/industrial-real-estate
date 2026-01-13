@@ -239,9 +239,12 @@ class DatabaseManager:
             asset = Asset(**asset_data)
             session.add(asset)
             session.commit()
-            return asset
+            session.refresh(asset)  # 刷新对象，加载ID
+            asset_id = asset.id
+            return asset_id  # 只返回ID，不返回对象
         except Exception as e:
             session.rollback()
+            logger.error(f"Error adding asset: {e}")
             raise e
         finally:
             session.close()
@@ -322,9 +325,12 @@ class DatabaseManager:
             transaction = Transaction(**transaction_data)
             session.add(transaction)
             session.commit()
-            return transaction
+            session.refresh(transaction)  # 刷新对象，加载ID
+            transaction_id = transaction.id
+            return transaction_id  # 只返回ID，不返回对象
         except Exception as e:
             session.rollback()
+            logger.error(f"Error adding transaction: {e}")
             raise e
         finally:
             session.close()
@@ -472,9 +478,12 @@ class DatabaseManager:
             project = Project(**project_data)
             session.add(project)
             session.commit()
-            return project
+            session.refresh(project)  # 刷新对象，加载ID
+            project_id = project.id
+            return project_id  # 只返回ID，不返回对象
         except Exception as e:
             session.rollback()
+            logger.error(f"Error adding project: {e}")
             raise e
         finally:
             session.close()
@@ -590,9 +599,17 @@ class DatabaseManager:
             project = DDProject(**project_data)
             session.add(project)
             session.commit()
-            return project
+            session.refresh(project)  # 刷新对象，加载ID
+            
+            # 在session关闭前获取所有需要的属性
+            project_id = project.id
+            project_name = project.project_name
+            
+            return project_id  # 只返回ID，不返回对象
+            
         except Exception as e:
             session.rollback()
+            logger.error(f"Error adding DD project: {e}")
             raise e
         finally:
             session.close()
@@ -654,9 +671,12 @@ class DatabaseManager:
             indicator = MarketIndicator(**indicator_data)
             session.add(indicator)
             session.commit()
-            return indicator
+            session.refresh(indicator)  # 刷新对象，加载ID
+            indicator_id = indicator.id
+            return indicator_id  # 只返回ID，不返回对象
         except Exception as e:
             session.rollback()
+            logger.error(f"Error adding market indicator: {e}")
             raise e
         finally:
             session.close()
@@ -683,9 +703,12 @@ class DatabaseManager:
             project = DevelopmentProject(**project_data)
             session.add(project)
             session.commit()
-            return project
+            session.refresh(project)  # 刷新对象，加载ID
+            project_id = project.id
+            return project_id  # 只返回ID，不返回对象
         except Exception as e:
             session.rollback()
+            logger.error(f"Error adding development project: {e}")
             raise e
         finally:
             session.close()
@@ -714,9 +737,12 @@ class DatabaseManager:
             rental = RentalData(**rental_data)
             session.add(rental)
             session.commit()
-            return rental
+            session.refresh(rental)  # 刷新对象，加载ID
+            rental_id = rental.id
+            return rental_id  # 只返回ID，不返回对象
         except Exception as e:
             session.rollback()
+            logger.error(f"Error adding rental data: {e}")
             raise e
         finally:
             session.close()
@@ -743,9 +769,12 @@ class DatabaseManager:
             project = InfrastructureProject(**project_data)
             session.add(project)
             session.commit()
-            return project
+            session.refresh(project)  # 刷新对象，加载ID
+            project_id = project.id
+            return project_id  # 只返回ID，不返回对象
         except Exception as e:
             session.rollback()
+            logger.error(f"Error adding infrastructure project: {e}")
             raise e
         finally:
             session.close()
@@ -770,9 +799,12 @@ class DatabaseManager:
             analysis = CompetitorAnalysis(**analysis_data)
             session.add(analysis)
             session.commit()
-            return analysis
+            session.refresh(analysis)  # 刷新对象，加载ID
+            analysis_id = analysis.id
+            return analysis_id  # 只返回ID，不返回对象
         except Exception as e:
             session.rollback()
+            logger.error(f"Error adding competitor analysis: {e}")
             raise e
         finally:
             session.close()
