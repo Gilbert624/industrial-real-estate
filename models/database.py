@@ -1,6 +1,8 @@
 """
 Database models and manager for Industrial Real Estate Management System
 工业地产管理系统数据库模型和管理器
+
+Last updated: 2026-01-13
 """
 
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Boolean, ForeignKey, func, extract
