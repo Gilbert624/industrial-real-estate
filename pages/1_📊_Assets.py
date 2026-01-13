@@ -150,14 +150,14 @@ def format_asset_dataframe(assets):
         data.append({
             'Asset ID': asset.id,
             'Project Name': asset.name,
-            'Address': f"{asset.address_line1}, {asset.suburb}",
+            'Address': asset.address or 'N/A',
             'Region': asset.region,
             'Type': str(asset.asset_type).replace('_', ' ').title() if asset.asset_type else 'N/A',
             'Land Area (㎡)': f"{asset.land_area_sqm:,.0f}" if asset.land_area_sqm else 'N/A',
             'Building Area (㎡)': f"{asset.building_area_sqm:,.0f}" if asset.building_area_sqm else 'N/A',
             'Current Valuation': f"${asset.current_valuation:,.2f}" if asset.current_valuation else 'N/A',
             'Status': str(asset.status).replace('_', ' ').title() if asset.status else 'N/A',
-            'Purchase Date': asset.purchase_date.strftime('%d %b %Y') if asset.purchase_date else 'N/A'
+            'Acquisition Date': asset.acquisition_date.strftime('%d %b %Y') if asset.acquisition_date else 'N/A'
         })
     
     return pd.DataFrame(data)
@@ -177,13 +177,8 @@ def display_asset_details(asset, session):
         
         with col1:
             st.markdown("#### 📍 Location")
-            st.write(f"**Address:** {asset.address_line1}")
-            if asset.address_line2:
-                st.write(f"{asset.address_line2}")
-            st.write(f"**Suburb:** {asset.suburb}")
-            st.write(f"**Postcode:** {asset.postcode}")
-            st.write(f"**Region:** {asset.region}")
-            st.write(f"**Council:** {asset.council or 'N/A'}")
+            st.write(f"**Address:** {asset.address or 'N/A'}")
+            st.write(f"**Region:** {asset.region or 'N/A'}")
         
         with col2:
             st.markdown("#### 📐 Physical Characteristics")
@@ -191,54 +186,22 @@ def display_asset_details(asset, session):
             st.write(f"**Status:** {str(asset.status).replace('_', ' ').title() if asset.status else 'N/A'}")
             st.write(f"**Land Area:** {asset.land_area_sqm:,.0f} ㎡" if asset.land_area_sqm else "Land Area: N/A")
             st.write(f"**Building Area:** {asset.building_area_sqm:,.0f} ㎡" if asset.building_area_sqm else "Building Area: N/A")
-            if asset.warehouse_area_sqm:
-                st.write(f"**Warehouse:** {asset.warehouse_area_sqm:,.0f} ㎡")
-            if asset.office_area_sqm:
-                st.write(f"**Office:** {asset.office_area_sqm:,.0f} ㎡")
-            if asset.clear_height_meters:
-                st.write(f"**Clear Height:** {asset.clear_height_meters} m")
+            if asset.building_area_sqm:
+                st.write(f"**Building Area:** {asset.building_area_sqm:,.0f} ㎡")
+            if asset.land_area_sqm:
+                st.write(f"**Land Area:** {asset.land_area_sqm:,.0f} ㎡")
         
         with col3:
             st.markdown("#### 💰 Financial Information")
-            if asset.purchase_price:
-                st.write(f"**Purchase Price:** ${asset.purchase_price:,.2f}")
-            if asset.purchase_date:
-                st.write(f"**Purchase Date:** {asset.purchase_date.strftime('%d %b %Y')}")
             if asset.current_valuation:
                 st.write(f"**Current Valuation:** ${asset.current_valuation:,.2f}")
-            if asset.valuation_date:
-                st.write(f"**Valuation Date:** {asset.valuation_date.strftime('%d %b %Y')}")
-            
-            # Calculate appreciation if both values exist
-            if asset.purchase_price and asset.current_valuation:
-                appreciation = asset.current_valuation - asset.purchase_price
-                appreciation_pct = (appreciation / asset.purchase_price) * 100
-                st.write(f"**Appreciation:** ${appreciation:,.2f} ({appreciation_pct:+.1f}%)")
+            if asset.acquisition_date:
+                st.write(f"**Acquisition Date:** {asset.acquisition_date.strftime('%d %b %Y')}")
         
-        # Technical specifications
-        if any([asset.power_capacity_kva, asset.loading_docks, asset.car_parking_spaces]):
-            st.markdown("#### 🔧 Technical Specifications")
-            specs_col1, specs_col2, specs_col3 = st.columns(3)
-            
-            with specs_col1:
-                if asset.power_capacity_kva:
-                    st.write(f"⚡ **Power:** {asset.power_capacity_kva} kVA")
-            with specs_col2:
-                if asset.loading_docks:
-                    st.write(f"🚛 **Loading Docks:** {asset.loading_docks}")
-            with specs_col3:
-                if asset.car_parking_spaces:
-                    st.write(f"🅿️ **Parking Spaces:** {asset.car_parking_spaces}")
-        
-        # Zoning information
-        if asset.zoning:
-            st.markdown("#### 📋 Zoning & Compliance")
-            st.write(f"**Zoning:** {asset.zoning}")
-        
-        # Description
-        if asset.description:
-            st.markdown("#### 📝 Description")
-            st.write(asset.description)
+        # Notes
+        if asset.notes:
+            st.markdown("#### 📝 Notes")
+            st.write(asset.notes)
         
         # Related projects
         try:
@@ -361,7 +324,7 @@ def main():
             
             address = st.text_area(
                 f"{t('assets.address')}*",
-                value=asset.address_line1 if asset else "",
+                value=asset.address if asset else "",
                 help="Street address"
             )
             
@@ -480,11 +443,7 @@ def main():
                         "building_area_sqm": building_area if building_area > 0 else None,
                         "current_valuation": valuation,
                         "acquisition_date": acquisition_date,
-                        "description": description.strip() if description else None,
-                        # Set required fields for address
-                        "suburb": region,  # Use region as suburb for now
-                        "state": "Queensland",
-                        "postcode": "0000"  # Default postcode
+                        "notes": description.strip() if description else None
                     }
                     
                     try:
