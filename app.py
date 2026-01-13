@@ -70,8 +70,21 @@ def init_database():
         # 创建所有表
         Base.metadata.create_all(db.engine)
         
-        # 验证表是否创建
+        # 迁移现有表结构（添加缺失的列）
+        from sqlalchemy import text
         inspector = inspect(db.engine)
+        if 'assets' in inspector.get_table_names():
+            columns = [col['name'] for col in inspector.get_columns('assets')]
+            if 'address' not in columns:
+                try:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE assets ADD COLUMN address TEXT"))
+                        conn.commit()
+                    print("✅ Added missing 'address' column to assets table")
+                except Exception as e:
+                    print(f"⚠️ Could not add address column: {e}")
+        
+        # 验证表是否创建
         tables = inspector.get_table_names()
         print(f"✅ Database tables created: {tables}")
 
@@ -93,6 +106,8 @@ def init_database():
         return db
     except Exception as e:
         st.error(f"Database initialization failed: {e}")
+        import traceback
+        traceback.print_exc()
         return DatabaseManager()
 
 # 获取数据库实例
