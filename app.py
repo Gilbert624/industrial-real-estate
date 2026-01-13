@@ -73,16 +73,42 @@ def init_database():
         # 迁移现有表结构（添加缺失的列）
         from sqlalchemy import text
         inspector = inspect(db.engine)
+        
+        # 迁移 assets 表 - 添加所有可能缺失的列
         if 'assets' in inspector.get_table_names():
-            columns = [col['name'] for col in inspector.get_columns('assets')]
-            if 'address' not in columns:
-                try:
-                    with db.engine.connect() as conn:
-                        conn.execute(text("ALTER TABLE assets ADD COLUMN address TEXT"))
-                        conn.commit()
-                    print("✅ Added missing 'address' column to assets table")
-                except Exception as e:
-                    print(f"⚠️ Could not add address column: {e}")
+            existing_columns = [col['name'] for col in inspector.get_columns('assets')]
+            print(f"📊 Assets table existing columns: {existing_columns}")
+            
+            # Asset 模型的所有字段（按模型定义顺序）
+            asset_columns = {
+                'name': 'TEXT NOT NULL',
+                'asset_type': 'TEXT',
+                'region': 'TEXT',
+                'address': 'TEXT',
+                'land_area_sqm': 'REAL',
+                'building_area_sqm': 'REAL',
+                'current_valuation': 'REAL',
+                'acquisition_date': 'DATETIME',
+                'status': 'TEXT',
+                'notes': 'TEXT',
+                'created_at': 'DATETIME',
+                'updated_at': 'DATETIME'
+            }
+            
+            added_columns = []
+            for col_name, col_type in asset_columns.items():
+                if col_name not in existing_columns:
+                    try:
+                        with db.engine.connect() as conn:
+                            conn.execute(text(f"ALTER TABLE assets ADD COLUMN {col_name} {col_type}"))
+                            conn.commit()
+                        added_columns.append(col_name)
+                        print(f"✅ Added missing '{col_name}' column to assets table")
+                    except Exception as e:
+                        print(f"⚠️ Could not add {col_name} column: {e}")
+            
+            if added_columns:
+                print(f"✅ Migration complete: Added {len(added_columns)} columns: {added_columns}")
         
         # 验证表是否创建
         tables = inspector.get_table_names()
