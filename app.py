@@ -51,90 +51,80 @@ except ImportError as e:
 # Initialize database
 @st.cache_resource
 def init_database():
-    """Initialize database and create all tables"""
-    from models.database import (
-        Base, 
-        Asset, 
-        Transaction, 
-        Project, 
-        DDProject,
-        MarketIndicator,
-        DevelopmentProject,
-        RentalData,
-        InfrastructureProject,
-        CompetitorAnalysis
-    )
+    """Initialize database and create all tables if not exist"""
+    db_manager = DatabaseManager()
     
-    db = DatabaseManager()
     try:
-        # 创建所有表
-        Base.metadata.create_all(db.engine)
+        from sqlalchemy import create_engine, inspect
+        from models.database import Base
         
-        # 迁移现有表结构（添加缺失的列）
-        from sqlalchemy import text
-        inspector = inspect(db.engine)
+        engine = create_engine(f'sqlite:///{db_manager.db_path}')
         
-        # 迁移 assets 表 - 添加所有可能缺失的列
-        if 'assets' in inspector.get_table_names():
-            existing_columns = [col['name'] for col in inspector.get_columns('assets')]
-            print(f"📊 Assets table existing columns: {existing_columns}")
-            
-            # Asset 模型的所有字段（按模型定义顺序）
-            asset_columns = {
-                'name': 'TEXT NOT NULL',
-                'asset_type': 'TEXT',
-                'region': 'TEXT',
-                'address': 'TEXT',
-                'land_area_sqm': 'REAL',
-                'building_area_sqm': 'REAL',
-                'current_valuation': 'REAL',
-                'acquisition_date': 'DATETIME',
-                'status': 'TEXT',
-                'notes': 'TEXT',
-                'created_at': 'DATETIME',
-                'updated_at': 'DATETIME'
-            }
-            
-            added_columns = []
-            for col_name, col_type in asset_columns.items():
-                if col_name not in existing_columns:
-                    try:
-                        with db.engine.connect() as conn:
-                            conn.execute(text(f"ALTER TABLE assets ADD COLUMN {col_name} {col_type}"))
-                            conn.commit()
-                        added_columns.append(col_name)
-                        print(f"✅ Added missing '{col_name}' column to assets table")
-                    except Exception as e:
-                        print(f"⚠️ Could not add {col_name} column: {e}")
-            
-            if added_columns:
-                print(f"✅ Migration complete: Added {len(added_columns)} columns: {added_columns}")
+        # 检查表是否存在且结构正确
+        inspector = inspect(engine)
+        existing_tables = inspector.get_table_names()
         
-        # 验证表是否创建
-        tables = inspector.get_table_names()
-        print(f"✅ Database tables created: {tables}")
-
-        # 检查新表
+        needs_rebuild = False
+        
+        # 检查关键表的结构
+        if 'dd_projects' in existing_tables:
+            columns = [col['name'] for col in inspector.get_columns('dd_projects')]
+            
+            # 检查是否有新结构的列
+            if 'project_name' not in columns:
+                print("⚠️ Detected old dd_projects structure")
+                needs_rebuild = True
+        
+        # 检查市场情报表是否存在
         required_tables = [
             'market_indicators',
-            'development_projects', 
+            'development_projects',
             'rental_data',
             'infrastructure_projects',
             'competitor_analysis'
         ]
-
-        missing_tables = [t for t in required_tables if t not in tables]
+        
+        missing_tables = [t for t in required_tables if t not in existing_tables]
+        
         if missing_tables:
             print(f"⚠️ Missing tables: {missing_tables}")
-        else:
-            print("✅ All market intelligence tables created")
+            needs_rebuild = True
         
-        return db
+        # 如果需要重建
+        if needs_rebuild:
+            print("🔄 Rebuilding database with new structure...")
+            
+            # 删除所有表
+            Base.metadata.drop_all(engine)
+            
+            # 重新创建所有表
+            Base.metadata.create_all(engine)
+            
+            print("✅ Database rebuilt successfully!")
+        else:
+            # 表结构正确，只创建缺失的表（如果有）
+            Base.metadata.create_all(engine)
+            print("✅ Database structure verified")
+        
+        return db_manager
+        
     except Exception as e:
-        st.error(f"Database initialization failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return DatabaseManager()
+        print(f"❌ Database initialization error: {e}")
+        
+        # 出错时尝试完全重建
+        try:
+            from models.database import Base
+            from sqlalchemy import create_engine
+            
+            engine = create_engine(f'sqlite:///{db_manager.db_path}')
+            Base.metadata.drop_all(engine)
+            Base.metadata.create_all(engine)
+            
+            print("🔄 Database rebuilt from scratch after error")
+        except Exception as rebuild_error:
+            print(f"❌ Rebuild also failed: {rebuild_error}")
+        
+        return db_manager
 
 # 获取数据库实例
 db = init_database()
@@ -464,10 +454,62 @@ def main():
         # Check if dark theme is selected (compare with translated text)
         if theme_mode == t('common.dark'):
             st.markdown(generate_css('dark'), unsafe_allow_html=True)
+        
+        # 管理员调试功能（隐藏）
+        st.markdown("---")
+        with st.expander("🔧 Admin Tools", expanded=False):
+            if st.button("Clear All Cache & Rebuild DB"):
+                st.cache_data.clear()
+                st.cache_resource.clear()
+                
+                # 强制重建数据库
+                try:
+                    from models.database import Base
+                    from sqlalchemy import create_engine
+                    
+                    engine = create_engine(f'sqlite:///{db.db_path}')
+                    Base.metadata.drop_all(engine)
+                    Base.metadata.create_all(engine)
+                    
+                    st.success("✅ Cache cleared and database rebuilt!")
+                    st.info("Please refresh the page (F5)")
+                except Exception as e:
+                    st.error(f"Error: {e}")
     
     # Main content
     st.title(f"🏢 {t('app.title')}")
     st.markdown(f"### {t('app.subtitle')}")
+    
+    # 数据库状态提示（仅在需要时显示）
+    if 'db_rebuild_notification' not in st.session_state:
+        st.session_state.db_rebuild_notification = True
+
+    # 检查数据库是否刚刚重建
+    if st.session_state.db_rebuild_notification:
+        try:
+            from sqlalchemy import inspect, create_engine
+            
+            engine = create_engine(f'sqlite:///{db.db_path}')
+            inspector = inspect(engine)
+            
+            # 验证关键表存在
+            tables = inspector.get_table_names()
+            required_tables = ['dd_projects', 'market_indicators', 'development_projects']
+            
+            if all(t in tables for t in required_tables):
+                # 检查 dd_projects 的列
+                dd_columns = [col['name'] for col in inspector.get_columns('dd_projects')]
+                
+                if 'project_name' in dd_columns:
+                    # 数据库结构正确
+                    st.session_state.db_rebuild_notification = False
+                else:
+                    st.info("🔄 Database is being updated. Please wait...")
+            else:
+                st.info("🔄 Initializing database tables...")
+                
+        except:
+            pass
     
     # Check if we can proceed
     if not DB_AVAILABLE:
