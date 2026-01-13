@@ -10,6 +10,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
 import os
+import sys
 from datetime import datetime, timedelta
 from sqlalchemy import func
 
@@ -42,17 +43,91 @@ except ImportError as e:
 # Initialize database
 @st.cache_resource
 def init_database():
-    """Initialize database and create all tables"""
-    db = DatabaseManager()
+    """Initialize database and create all tables if not exist"""
+    db_manager = DatabaseManager()
+    
     try:
-        # 创建所有表
-        Base.metadata.create_all(db.engine)
-        return db
+        from sqlalchemy import create_engine, inspect, text
+        from models.database import Base
+        
+        engine = create_engine(f'sqlite:///{db_manager.db_path}')
+        inspector = inspect(engine)
+        
+        needs_rebuild = False
+        
+        # 检查 assets 表
+        if 'assets' in inspector.get_table_names():
+            asset_columns = [col['name'] for col in inspector.get_columns('assets')]
+            required_asset_columns = [
+                'purchase_price', 'address_line1', 'current_valuation',
+                'land_area_sqm', 'building_area_sqm'
+            ]
+            missing_asset_cols = [col for col in required_asset_columns if col not in asset_columns]
+            
+            if missing_asset_cols:
+                print(f"⚠️  Assets table missing columns: {missing_asset_cols}")
+                needs_rebuild = True
+        
+        # 检查 transactions 表
+        if 'transactions' in inspector.get_table_names():
+            trans_columns = [col['name'] for col in inspector.get_columns('transactions')]
+            if 'project_id' not in trans_columns:
+                print("⚠️  Transactions table missing project_id column")
+                needs_rebuild = True
+        
+        # 检查 dd_projects 表
+        if 'dd_projects' in inspector.get_table_names():
+            dd_columns = [col['name'] for col in inspector.get_columns('dd_projects')]
+            if 'project_name' not in dd_columns:
+                print("⚠️  DD Projects table has old structure")
+                needs_rebuild = True
+        
+        # 如果需要重建
+        if needs_rebuild:
+            print("🔄 Database structure mismatch detected. Rebuilding...")
+            
+            # 备份提示
+            print("⚠️  Note: Existing data will be cleared during rebuild")
+            
+            # 删除所有表
+            Base.metadata.drop_all(engine)
+            print("✅ Old tables dropped")
+            
+            # 重新创建所有表
+            Base.metadata.create_all(engine)
+            print("✅ New tables created with correct structure")
+            
+            # 验证新结构
+            inspector = inspect(engine)
+            asset_columns = [col['name'] for col in inspector.get_columns('assets')]
+            print(f"✅ Assets table columns: {len(asset_columns)}")
+            
+        else:
+            # 结构正确，只创建缺失的表
+            Base.metadata.create_all(engine)
+            print("✅ Database structure verified")
+        
+        return db_manager
+        
     except Exception as e:
-        st.error(f"Database initialization failed: {e}")
-        return DatabaseManager()
+        print(f"❌ Database initialization error: {e}")
+        
+        # 出错时尝试完全重建
+        try:
+            from models.database import Base
+            from sqlalchemy import create_engine
+            
+            engine = create_engine(f'sqlite:///{db_manager.db_path}')
+            Base.metadata.drop_all(engine)
+            Base.metadata.create_all(engine)
+            
+            print("🔄 Database rebuilt from scratch after error")
+        except Exception as rebuild_error:
+            print(f"❌ Rebuild also failed: {rebuild_error}")
+        
+        return db_manager
 
-# 获取数据库实例
+# 初始化数据库
 db = init_database()
 
 # Page configuration
@@ -365,6 +440,59 @@ def main():
         # Check if dark theme is selected (compare with translated text)
         if theme_mode == t('common.dark'):
             st.markdown(generate_css('dark'), unsafe_allow_html=True)
+        
+        # Developer Mode (hidden)
+        st.markdown("---")
+        if st.checkbox("Developer Mode", value=False, key="dev_mode"):
+            st.caption("🔧 Debug tools enabled")
+            
+            with st.expander("System Info"):
+                st.code(f"""
+Python: {sys.version}
+Streamlit: {st.__version__}
+Database: {db.db_path}
+Tables: {len(Base.metadata.tables)}
+                """)
+            
+            # 数据库重建按钮
+            with st.expander("⚠️ Database Management", expanded=False):
+                st.warning("**Warning:** This will delete all existing data!")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if st.button("🔍 Check Structure", width='stretch'):
+                        from sqlalchemy import inspect
+                        
+                        inspector = inspect(db.engine)
+                        
+                        st.write("**Tables:**")
+                        for table in inspector.get_table_names():
+                            cols = [c['name'] for c in inspector.get_columns(table)]
+                            st.write(f"- {table}: {len(cols)} columns")
+                
+                with col2:
+                    if st.button("🔄 Rebuild Database", type="primary", width='stretch'):
+                        try:
+                            from models.database import Base
+                            
+                            # 删除所有表
+                            Base.metadata.drop_all(db.engine)
+                            
+                            # 重新创建
+                            Base.metadata.create_all(db.engine)
+                            
+                            st.success("✅ Database rebuilt successfully!")
+                            st.info("Please refresh the page (F5)")
+                            
+                        except Exception as e:
+                            st.error(f"❌ Error: {e}")
+        
+        # Version info
+        st.markdown("---")
+        st.caption("Version 1.4 Professional")
+        st.caption(f"Last updated: {datetime.now().strftime('%b %d, %Y')}")
+        st.caption("© 2026 Gilbert · Brisbane")
     
     # Main content
     st.title(f"🏢 {t('app.title')}")
