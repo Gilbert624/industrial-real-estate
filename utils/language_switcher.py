@@ -124,7 +124,7 @@ def render_language_switcher(location='sidebar', show_label=True):
             if st.button(
                 "🇬🇧 English",
                 key="lang_en",
-                use_container_width=True,
+                width='stretch',
                 type="primary" if current_lang == 'en' else "secondary"
             ):
                 selected_lang_label = 'en'
@@ -133,7 +133,7 @@ def render_language_switcher(location='sidebar', show_label=True):
             if st.button(
                 "🇨🇳 中文",
                 key="lang_zh",
-                use_container_width=True,
+                width='stretch',
                 type="primary" if current_lang == 'zh' else "secondary"
             ):
                 selected_lang_label = 'zh'
