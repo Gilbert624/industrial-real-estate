@@ -51,7 +51,7 @@ with col1:
         st.session_state.selected_dd_project = None
 
 with col2:
-    if st.button(f"🗑️ {t('dd.delete_project')}", use_container_width=True, disabled=not st.session_state.selected_dd_project):
+    if st.button(f"🗑️ {t('dd.delete_project')}", width='stretch', disabled=not st.session_state.selected_dd_project):
         if st.session_state.selected_dd_project:
             db.delete_dd_project(st.session_state.selected_dd_project)
             st.session_state.selected_dd_project = None
@@ -300,9 +300,9 @@ if st.session_state.selected_dd_project:
             # 提交按钮
             col1, col2 = st.columns(2)
             with col1:
-                submitted = st.form_submit_button(f"💾 {t('dd.parameters.save_parameters')}", use_container_width=True)
+                submitted = st.form_submit_button(f"💾 {t('dd.parameters.save_parameters')}", width='stretch')
             with col2:
-                calculate = st.form_submit_button(f"🧮 {t('dd.parameters.calculate_returns')}", use_container_width=True, type="primary")
+                calculate = st.form_submit_button(f"🧮 {t('dd.parameters.calculate_returns')}", width='stretch', type="primary")
             
             if submitted or calculate:
                 # 验证
@@ -515,7 +515,7 @@ if st.session_state.selected_dd_project:
                             st.write(f"{row['Category']}: {format_currency(row['Amount'])}")
                 
                 with col2:
-                    st.plotly_chart(fig_pie, use_container_width=True)
+                    st.plotly_chart(fig_pie, width='stretch')
                 
                 st.write("---")
                 
@@ -573,7 +573,7 @@ if st.session_state.selected_dd_project:
                     
                     fig_draws = apply_professional_theme_to_figure(fig_draws, theme='light')
                     
-                    st.plotly_chart(fig_draws, use_container_width=True)
+                    st.plotly_chart(fig_draws, width='stretch')
                     
                     # 显示汇总
                     col1, col2, col3 = st.columns(3)
@@ -655,7 +655,7 @@ if st.session_state.selected_dd_project:
                 
                 fig_cf = apply_professional_theme_to_figure(fig_cf, theme='light')
                 
-                st.plotly_chart(fig_cf, use_container_width=True)
+                st.plotly_chart(fig_cf, width='stretch')
                 
                 # ========== 累计现金流 ==========
                 fig_cumulative = go.Figure()
@@ -686,7 +686,7 @@ if st.session_state.selected_dd_project:
                 
                 fig_cumulative = apply_professional_theme_to_figure(fig_cumulative, theme='light')
                 
-                st.plotly_chart(fig_cumulative, use_container_width=True)
+                st.plotly_chart(fig_cumulative, width='stretch')
                 
                 # ========== 详细现金流表 ==========
                 with st.expander("📋 View Detailed Cash Flow Table"):
@@ -723,10 +723,10 @@ if st.session_state.selected_dd_project:
                                 'Cumulative CF': format_currency(cf['cumulative_cash_flow'])
                             })
                     
-                    st.dataframe(pd.DataFrame(cf_table_data), use_container_width=True)
+                    st.dataframe(pd.DataFrame(cf_table_data), width='stretch')
                 
                 # ========== 保存计算结果到项目 ==========
-                if st.button("💾 Save Calculated Metrics to Project", use_container_width=True):
+                if st.button("💾 Save Calculated Metrics to Project", width='stretch'):
                     update_data = {
                         'irr': returns['irr'],
                         'npv': returns['npv'],
@@ -888,7 +888,7 @@ if st.session_state.selected_dd_project:
                 
                 fig_radar = apply_professional_theme_to_figure(fig_radar, theme='light')
                 
-                st.plotly_chart(fig_radar, use_container_width=True)
+                st.plotly_chart(fig_radar, width='stretch')
                 
                 st.write("---")
                 
@@ -977,7 +977,7 @@ if st.session_state.selected_dd_project:
                     
                     fig_sens = apply_professional_theme_to_figure(fig_sens, theme='light')
                     
-                    st.plotly_chart(fig_sens, use_container_width=True)
+                    st.plotly_chart(fig_sens, width='stretch')
                     
                     # 显示关键洞察
                     irr_range = max(sensitivity['irr']) - min(sensitivity['irr'])
@@ -1055,7 +1055,7 @@ if st.session_state.selected_dd_project:
                     
                     fig_tornado = apply_professional_theme_to_figure(fig_tornado, theme='light')
                     
-                    st.plotly_chart(fig_tornado, use_container_width=True)
+                    st.plotly_chart(fig_tornado, width='stretch')
                     
                     # 显示排名表
                     st.write("**Impact Ranking:**")
@@ -1071,7 +1071,7 @@ if st.session_state.selected_dd_project:
                         for i, item in enumerate(tornado_data)
                     ])
                     
-                    st.dataframe(ranking_df, use_container_width=True, hide_index=True)
+                    st.dataframe(ranking_df, width='stretch', hide_index=True)
                     
                     # 关键洞察
                     top_var = tornado_data[0]
@@ -1242,7 +1242,7 @@ if st.session_state.selected_dd_project:
                     }
                 ])
                 
-                st.dataframe(scenario_summary, use_container_width=True, hide_index=True)
+                st.dataframe(scenario_summary, width='stretch', hide_index=True)
                 
                 st.write("---")
                 
@@ -1254,7 +1254,7 @@ if st.session_state.selected_dd_project:
                 col1, col2, col3 = st.columns([1, 1, 1])
                 
                 with col2:
-                    if st.button("📄 Generate PDF Report", type="primary", use_container_width=True):
+                    if st.button("📄 Generate PDF Report", type="primary", width='stretch'):
                         with st.spinner("Generating professional report..."):
                             try:
                                 # 生成报告
@@ -1269,7 +1269,7 @@ if st.session_state.selected_dd_project:
                                     data=pdf_buffer,
                                     file_name=filename,
                                     mime="application/pdf",
-                                    use_container_width=True
+                                    width='stretch'
                                 )
                                 
                                 st.success("✅ Report generated successfully!")
@@ -1287,12 +1287,12 @@ if st.session_state.selected_dd_project:
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    if st.button("🔄 Recalculate All Metrics", use_container_width=True):
+                    if st.button("🔄 Recalculate All Metrics", width='stretch'):
                         st.info("All metrics are automatically calculated based on current parameters.")
                         st.rerun()
                 
                 with col2:
-                    if st.button("📧 Email Report (Coming Soon)", use_container_width=True, disabled=True):
+                    if st.button("📧 Email Report (Coming Soon)", width='stretch', disabled=True):
                         st.info("Email functionality will be available in a future update.")
                 
                 # ========== 项目状态更新 ==========
@@ -1353,7 +1353,7 @@ else:
             height=100
         )
         
-        submitted = st.form_submit_button("➕ Create Project", use_container_width=True, type="primary")
+        submitted = st.form_submit_button("➕ Create Project", width='stretch', type="primary")
         
         if submitted:
             if not name or not location:

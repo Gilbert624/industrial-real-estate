@@ -12,7 +12,6 @@ import time
 from models.database import DatabaseManager
 from utils.market_data_collector import MarketDataCollector
 from config.theme import generate_css
-from config.i18n import t
 
 # Page configuration - must be first
 st.set_page_config(
@@ -29,8 +28,8 @@ db = DatabaseManager()
 collector = MarketDataCollector()
 
 # 标题
-st.title(f"📈 {t('market.title', default='Market Intelligence')}")
-st.markdown(f"*{t('market.subtitle', default='Real-time market data and competitive analysis')}*")
+st.title("📈 Market Intelligence")
+st.markdown("*Real-time market data and competitive analysis*")
 
 # ==================== 侧边栏 ====================
 
@@ -38,7 +37,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 🎯 Quick Actions")
     
-    if st.button("🔄 Update Market Data", use_container_width=True):
+    if st.button("🔄 Update Market Data", width='stretch'):
         with st.spinner("Collecting market data..."):
             try:
                 summary = collector.get_complete_market_summary()
@@ -164,7 +163,7 @@ with tab1:
             hovermode='x unified'
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     
     with col2:
         st.markdown("### 📊 Vacancy Rate Comparison")
@@ -193,7 +192,7 @@ with tab1:
             height=350
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     
     # 新增供应
     st.markdown("### 🏗️ New Supply Pipeline")
@@ -225,7 +224,7 @@ with tab1:
         yaxis_title="Floor Area (sqm)"
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 # ==================== Tab 2: Economic Indicators ====================
 
@@ -332,7 +331,7 @@ with tab2:
                 ]
             })
             
-            st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+            st.dataframe(comparison_df, width='stretch', hide_index=True)
             
             st.caption(f"Data: {oecd_data['quarter']} | Source: [{oecd_data['source']}]({oecd_data['url']})")
         else:
@@ -342,7 +341,7 @@ with tab2:
     st.markdown("### 📈 RBA Cash Rate Trend (24 Months)")
     
     # 示例历史数据
-    months_hist = pd.date_range(end=datetime.now(), periods=24, freq='M')
+    months_hist = pd.date_range(end=datetime.now(), periods=24, freq='ME')
     cash_rate_hist = [0.10, 0.10, 0.35, 0.85, 1.35, 1.85, 2.35, 2.60,
                       2.85, 3.10, 3.35, 3.60, 3.85, 4.10, 4.10, 4.10,
                       4.10, 4.35, 4.35, 4.35, 4.35, 4.35, 4.35, 4.35]
@@ -367,7 +366,7 @@ with tab2:
         hovermode='x unified'
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
     
     # 数据源链接
     st.markdown("---")
@@ -425,7 +424,7 @@ with tab3:
         )
     
     with col4:
-        if st.button("➕ Add New Project", use_container_width=True):
+        if st.button("➕ Add New Project", width='stretch'):
             st.session_state['show_add_project'] = True
     
     st.markdown("---")
@@ -459,7 +458,7 @@ with tab3:
                 
                 col1, col2 = st.columns([3, 1])
                 with col2:
-                    if st.form_submit_button("Save Project", use_container_width=True):
+                    if st.form_submit_button("Save Project", width='stretch'):
                         try:
                             project_data = {
                                 'project_name': project_name,
@@ -507,7 +506,7 @@ with tab3:
                 })
             
             df = pd.DataFrame(projects_data)
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, width='stretch', hide_index=True)
         else:
             st.info("No development projects found. Click 'Add New Project' to start tracking.")
     
@@ -523,7 +522,7 @@ with tab3:
     
     if qld_approvals:
         approvals_df = pd.DataFrame(qld_approvals)
-        st.dataframe(approvals_df, use_container_width=True, hide_index=True)
+        st.dataframe(approvals_df, width='stretch', hide_index=True)
     else:
         st.info("Queensland approvals data will be displayed here.")
     
@@ -555,7 +554,7 @@ with tab4:
     col1, col2 = st.columns([3, 1])
     
     with col2:
-        if st.button("➕ Add Rental Data", use_container_width=True):
+        if st.button("➕ Add Rental Data", width='stretch'):
             st.session_state['show_add_rental'] = True
     
     # 添加租金数据表单
@@ -587,7 +586,7 @@ with tab4:
                 
                 col1, col2 = st.columns([3, 1])
                 with col2:
-                    if st.form_submit_button("Save Data", use_container_width=True):
+                    if st.form_submit_button("Save Data", width='stretch'):
                         try:
                             rental_data = {
                                 'region': region,
@@ -634,7 +633,7 @@ with tab4:
                 })
             
             df = pd.DataFrame(rental_df_data)
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, width='stretch', hide_index=True)
             
             # 租金对比图表
             st.markdown("### 📈 Rental Comparison by Region")
@@ -664,7 +663,7 @@ with tab4:
                 height=400
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         
         else:
             st.info("No rental data found. Click 'Add Rental Data' to start tracking.")
@@ -680,7 +679,7 @@ with tab5:
     col1, col2 = st.columns([3, 1])
     
     with col2:
-        if st.button("➕ Add Competitor", use_container_width=True):
+        if st.button("➕ Add Competitor", width='stretch'):
             st.session_state['show_add_competitor'] = True
     
     # 添加竞争对手表单
@@ -710,7 +709,7 @@ with tab5:
                 
                 col1, col2 = st.columns([3, 1])
                 with col2:
-                    if st.form_submit_button("Save Analysis", use_container_width=True):
+                    if st.form_submit_button("Save Analysis", width='stretch'):
                         try:
                             analysis_data = {
                                 'competitor_name': competitor_name,
@@ -795,7 +794,7 @@ with tab5:
                 'Focus': ['Logistics & Industrial', 'Diversified', 'Office & Industrial', 'Retail & Office', 'Industrial']
             })
             
-            st.dataframe(major_competitors, use_container_width=True, hide_index=True)
+            st.dataframe(major_competitors, width='stretch', hide_index=True)
     
     except Exception as e:
         st.error(f"Error loading competitor analysis: {e}")
@@ -822,7 +821,7 @@ with tab6:
         - Brisbane Council Data
         """)
         
-        if st.button("🔄 Collect All Data", type="primary", use_container_width=True):
+        if st.button("🔄 Collect All Data", type="primary", width='stretch'):
             with st.spinner("Collecting data from all sources..."):
                 try:
                     progress_bar = st.progress(0)
@@ -900,15 +899,15 @@ with tab6:
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("📊 Export to Excel", use_container_width=True):
+        if st.button("📊 Export to Excel", width='stretch'):
             st.info("Excel export feature coming soon!")
     
     with col2:
-        if st.button("📄 Generate PDF Report", use_container_width=True):
+        if st.button("📄 Generate PDF Report", width='stretch'):
             st.info("PDF report generation coming soon!")
     
     with col3:
-        if st.button("📋 Copy to Clipboard", use_container_width=True):
+        if st.button("📋 Copy to Clipboard", width='stretch'):
             st.info("Clipboard feature coming soon!")
     
     st.markdown("---")

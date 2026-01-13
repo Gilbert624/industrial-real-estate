@@ -357,9 +357,9 @@ def main():
             # Buttons
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
-                submitted = st.form_submit_button(f"💾 {t('common.save')}", use_container_width=True)
+                submitted = st.form_submit_button(f"💾 {t('common.save')}", width='stretch')
             with col_btn2:
-                cancelled = st.form_submit_button(f"❌ {t('common.cancel')}", use_container_width=True)
+                cancelled = st.form_submit_button(f"❌ {t('common.cancel')}", width='stretch')
             
             # Handle submission
             if submitted:

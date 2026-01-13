@@ -148,7 +148,7 @@ def display_cashflow_trend_chart(trend_data, months):
     
     fig = apply_professional_theme_to_figure(fig, theme='light')
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 def display_income_expense_comparison(trend_data):
@@ -233,7 +233,7 @@ def display_income_expense_comparison(trend_data):
     
     fig = apply_professional_theme_to_figure(fig, theme='light')
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 def format_transactions_dataframe(transactions):
@@ -420,9 +420,9 @@ def main():
             # 按钮
             col1, col2 = st.columns(2)
             with col1:
-                submitted = st.form_submit_button(f"💾 {t('common.save')}", use_container_width=True)
+                submitted = st.form_submit_button(f"💾 {t('common.save')}", width='stretch')
             with col2:
-                cancelled = st.form_submit_button(f"❌ {t('common.cancel')}", use_container_width=True)
+                cancelled = st.form_submit_button(f"❌ {t('common.cancel')}", width='stretch')
             
             if submitted:
                 # 验证
@@ -668,12 +668,12 @@ def main():
                             st.write(desc_short)
                     
                     with row_cols[6]:
-                        if st.button("✏️", key=f"edit_tx_{tx.id}", help="Edit this transaction", use_container_width=True):
+                        if st.button("✏️", key=f"edit_tx_{tx.id}", help="Edit this transaction", width='stretch'):
                             st.session_state.edit_transaction_id = tx.id
                             st.rerun()
                     
                     with row_cols[7]:
-                        if st.button("🗑️", key=f"delete_tx_{tx.id}", help="Delete this transaction", use_container_width=True):
+                        if st.button("🗑️", key=f"delete_tx_{tx.id}", help="Delete this transaction", width='stretch'):
                             st.session_state[f'confirm_delete_tx_{tx.id}'] = True
                             st.rerun()
                     
@@ -682,7 +682,7 @@ def main():
                         st.warning(f"⚠️ Are you sure you want to delete this transaction: **{tx.description[:50]}**? This action cannot be undone.")
                         confirm_col1, confirm_col2 = st.columns(2)
                         with confirm_col1:
-                            if st.button("✅ Yes, Delete", key=f"confirm_yes_tx_{tx.id}", type="primary", use_container_width=True):
+                            if st.button("✅ Yes, Delete", key=f"confirm_yes_tx_{tx.id}", type="primary", width='stretch'):
                                 try:
                                     db.delete_transaction(tx.id)
                                     st.success(f"✅ Transaction deleted successfully!")
@@ -693,7 +693,7 @@ def main():
                                     st.error(f"❌ Error deleting transaction: {str(e)}")
                         
                         with confirm_col2:
-                            if st.button("❌ Cancel", key=f"confirm_no_tx_{tx.id}", use_container_width=True):
+                            if st.button("❌ Cancel", key=f"confirm_no_tx_{tx.id}", width='stretch'):
                                 del st.session_state[f'confirm_delete_tx_{tx.id}']
                                 st.rerun()
                     

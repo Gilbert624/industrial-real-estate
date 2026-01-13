@@ -451,9 +451,9 @@ def main():
             # Form buttons
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
-                submitted = st.form_submit_button(f"💾 {t('common.save')}", use_container_width=True)
+                submitted = st.form_submit_button(f"💾 {t('common.save')}", width='stretch')
             with col_btn2:
-                cancelled = st.form_submit_button(f"❌ {t('common.cancel')}", use_container_width=True)
+                cancelled = st.form_submit_button(f"❌ {t('common.cancel')}", width='stretch')
             
             if submitted:
                 # Validation
@@ -568,7 +568,7 @@ def main():
             
             st.dataframe(
                 display_df,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 column_config={
                     'Project Name': st.column_config.TextColumn(
@@ -630,12 +630,12 @@ def main():
                     st.write(f"**{asset.name}** - {asset.region} | Valuation: ${asset.current_valuation:,.2f}" if asset.current_valuation else f"**{asset.name}** - {asset.region}")
                 
                 with col2:
-                    if st.button(f"✏️ {t('common.edit')}", key=f"edit_{asset.id}", help="Edit this asset", use_container_width=True):
+                    if st.button(f"✏️ {t('common.edit')}", key=f"edit_{asset.id}", help="Edit this asset", width='stretch'):
                         st.session_state.edit_asset_id = asset.id
                         st.rerun()
                 
                 with col3:
-                    if st.button(f"🗑️ {t('common.delete')}", key=f"delete_{asset.id}", help="Delete this asset", use_container_width=True):
+                    if st.button(f"🗑️ {t('common.delete')}", key=f"delete_{asset.id}", help="Delete this asset", width='stretch'):
                         st.session_state[f'confirm_delete_{asset.id}'] = True
                         st.rerun()
             
@@ -645,7 +645,7 @@ def main():
                     st.warning(f"⚠️ {t('assets.delete_confirm')}")
                     col1, col2 = st.columns(2)
                     with col1:
-                        if st.button(f"✅ {t('common.yes')}, {t('common.delete')}", key=f"confirm_yes_{asset.id}", type="primary", use_container_width=True):
+                        if st.button(f"✅ {t('common.yes')}, {t('common.delete')}", key=f"confirm_yes_{asset.id}", type="primary", width='stretch'):
                             try:
                                 success = db.delete_asset(asset.id, session)
                                 if success:
@@ -658,7 +658,7 @@ def main():
                                 st.error(f"❌ {t('messages.error_occurred')}: {str(e)}")
                     
                     with col2:
-                        if st.button(f"❌ {t('common.cancel')}", key=f"confirm_no_{asset.id}", use_container_width=True):
+                        if st.button(f"❌ {t('common.cancel')}", key=f"confirm_no_{asset.id}", width='stretch'):
                             del st.session_state[f'confirm_delete_{asset.id}']
                             st.rerun()
             

@@ -68,7 +68,7 @@ with tab1:
         
         col1, col2 = st.columns([1, 4])
         with col1:
-            submitted = st.form_submit_button(f"🚀 {t('ai.ask_claude')}", use_container_width=True)
+            submitted = st.form_submit_button(f"🚀 {t('ai.ask_claude')}", width='stretch')
         with col2:
             include_context = st.checkbox(t('ai.include_context'), value=True)
     
@@ -154,7 +154,7 @@ with tab2:
         st.write(f"**💰 {t('ai.analyze_cash_flow')}**")
         st.write("Analyze your current cash position, income, expenses, and trends.")
         
-        if st.button(f"🔍 {t('ai.analyze_cash_flow')}", use_container_width=True):
+        if st.button(f"🔍 {t('ai.analyze_cash_flow')}", width='stretch'):
             with st.spinner("Analyzing cash flow..."):
                 try:
                     result = assistant.analyze_cash_flow()
@@ -172,7 +172,7 @@ with tab2:
         st.write(f"**📊 {t('ai.identify_trends')}**")
         st.write("Identify patterns and trends in your 6-month financial data.")
         
-        if st.button(f"📈 {t('ai.identify_trends')}", use_container_width=True):
+        if st.button(f"📈 {t('ai.identify_trends')}", width='stretch'):
             with st.spinner("Analyzing trends..."):
                 try:
                     result = assistant.identify_trends()
@@ -189,7 +189,7 @@ with tab2:
         st.write(f"**🏗️ {t('ai.compare_projects')}**")
         st.write("Compare active projects: performance, budget status, concerns.")
         
-        if st.button(f"⚖️ {t('ai.compare_projects')}", use_container_width=True):
+        if st.button(f"⚖️ {t('ai.compare_projects')}", width='stretch'):
             with st.spinner("Comparing projects..."):
                 try:
                     result = assistant.compare_projects()
@@ -207,7 +207,7 @@ with tab2:
         st.write(f"**✅ {t('ai.get_recommendations')}**")
         st.write("Get top 3-5 recommended actions based on your complete financial picture.")
         
-        if st.button(f"🎯 {t('ai.get_recommendations')}", use_container_width=True):
+        if st.button(f"🎯 {t('ai.get_recommendations')}", width='stretch'):
             with st.spinner("Generating recommendations..."):
                 try:
                     result = assistant.suggest_actions()

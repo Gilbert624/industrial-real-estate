@@ -258,7 +258,7 @@ def display_transactions(transactions):
     # Display as a styled table
     st.dataframe(
         df,
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
         column_config={
             'Date': st.column_config.TextColumn('Date', width='small'),
@@ -320,7 +320,7 @@ def display_portfolio_chart(dates, values):
         showlegend=False
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 def main():
@@ -411,7 +411,7 @@ def main():
                 st.write(t('dashboard.portfolio_report_desc'))
                 
                 # Generate PDF report
-                if st.button(f"📄 {t('dashboard.generate_pdf_report')}", use_container_width=True, key="generate_pdf"):
+                if st.button(f"📄 {t('dashboard.generate_pdf_report')}", width='stretch', key="generate_pdf"):
                     try:
                         with st.spinner("Generating PDF report..."):
                             pdf_buffer = report_gen.generate_portfolio_pdf()
@@ -430,7 +430,7 @@ def main():
                         data=st.session_state['pdf_report'],
                         file_name=st.session_state.get('pdf_filename', 'portfolio_report.pdf'),
                         mime="application/pdf",
-                        use_container_width=True,
+                        width='stretch',
                         key="download_pdf"
                     )
             
@@ -439,7 +439,7 @@ def main():
                 st.write(t('dashboard.financial_report_desc'))
                 
                 # Generate Excel report
-                if st.button(f"📊 {t('dashboard.generate_excel_report')}", use_container_width=True, key="generate_excel"):
+                if st.button(f"📊 {t('dashboard.generate_excel_report')}", width='stretch', key="generate_excel"):
                     try:
                         with st.spinner("Generating Excel report..."):
                             excel_buffer = report_gen.generate_financial_excel()
@@ -458,7 +458,7 @@ def main():
                         data=st.session_state['excel_report'],
                         file_name=st.session_state.get('excel_filename', 'financial_report.xlsx'),
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
+                        width='stretch',
                         key="download_excel"
                     )
         
