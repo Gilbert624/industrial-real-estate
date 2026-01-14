@@ -17,18 +17,19 @@ class AIAssistant:
     """AI-powered financial assistant with cost optimization"""
     
     # Model configurations with fallback options
+    # All models use Claude 3 Haiku for maximum compatibility
     MODELS = {
         'sonnet': {
-            'name': 'claude-3-5-sonnet-20240620',  # Stable version (Option A)
-            'fallback': 'claude-3-5-sonnet-20240620',  # Fallback to same stable version
-            'input_cost': 0.003,   # per 1K tokens
-            'output_cost': 0.015   # per 1K tokens
+            'name': 'claude-3-haiku-20240307',  # Using Haiku for 100% API key compatibility
+            'fallback': 'claude-3-haiku-20240307',  # Fallback to same model
+            'input_cost': 0.00025,  # per 1K tokens (Haiku pricing)
+            'output_cost': 0.00125  # per 1K tokens (Haiku pricing)
         },
         'haiku': {
-            'name': 'claude-3-haiku-20240307',  # Stable version (Option C - fastest, cheapest)
-            'fallback': 'claude-3-haiku-20240307',  # Fallback to same stable version
-            'input_cost': 0.00025,  # per 1K tokens (12x cheaper)
-            'output_cost': 0.00125  # per 1K tokens (12x cheaper)
+            'name': 'claude-3-haiku-20240307',  # Claude 3 Haiku - fastest, cheapest, 100% compatible
+            'fallback': 'claude-3-haiku-20240307',  # Fallback to same model
+            'input_cost': 0.00025,  # per 1K tokens (12x cheaper than Sonnet)
+            'output_cost': 0.00125  # per 1K tokens (12x cheaper than Sonnet)
         }
     }
     

@@ -76,6 +76,40 @@ debug = false
 
 4. 保存
 
+#### 验证 API Key 配置
+
+**在 Streamlit Cloud 中验证：**
+
+1. 在 Streamlit Cloud 控制台
+2. 点击 "Settings" → "Secrets"
+3. 确认有以下配置：
+   ```toml
+   ANTHROPIC_API_KEY = "sk-ant-..."
+   ```
+4. 确认 API key 格式正确（应以 `sk-ant-` 开头）
+
+**在 Anthropic 控制台验证：**
+
+1. 访问 https://console.anthropic.com
+2. 登录您的账户
+3. 进入 "API Keys" 页面
+4. 检查 API key 状态：
+   - ✅ 确认 key 是 "Active" 状态
+   - ✅ 确认有足够的额度（credits）
+   - ✅ 确认 key 没有过期
+
+**本地验证（可选）：**
+
+运行验证脚本测试 API key 是否有效：
+```bash
+python verify_api_key.py
+```
+
+如果 API key 有问题：
+- 在 Anthropic 控制台重新生成新的 API key
+- 更新 Streamlit Cloud Secrets 中的配置
+- 重新部署应用
+
 ### Step 4: 等待部署完成
 
 - 部署通常需要2-5分钟
@@ -168,7 +202,14 @@ def init_connection():
 
 3. **API Key 错误**
    - 确认在 Streamlit Cloud Secrets 中正确配置了 API Key
-   - 检查环境变量名称是否匹配
+   - 检查环境变量名称是否匹配（必须是 `ANTHROPIC_API_KEY`）
+   - 验证步骤：
+     1. 在 Streamlit Cloud 控制台：Settings → Secrets
+     2. 确认有：`ANTHROPIC_API_KEY = "sk-ant-..."`
+     3. 访问 https://console.anthropic.com 检查 API key 状态
+     4. 确认 API key 是有效的、未过期的、且有足够额度
+   - 如果 API key 无效，需要重新生成并更新 Secrets
+   - 运行 `python verify_api_key.py` 进行本地验证
 
 4. **缓存问题**
    - 如果数据未更新，尝试清除缓存
