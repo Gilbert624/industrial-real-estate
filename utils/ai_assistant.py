@@ -19,14 +19,14 @@ class AIAssistant:
     # Model configurations with fallback options
     MODELS = {
         'sonnet': {
-            'name': 'claude-3-5-sonnet-20241022',  # Latest stable version
-            'fallback': 'claude-3-5-sonnet-20241022',  # Fallback to 3.5
+            'name': 'claude-3-5-sonnet-20240620',  # Stable version (Option A)
+            'fallback': 'claude-3-5-sonnet-20240620',  # Fallback to same stable version
             'input_cost': 0.003,   # per 1K tokens
             'output_cost': 0.015   # per 1K tokens
         },
         'haiku': {
-            'name': 'claude-3-5-haiku-20241022',  # Try Claude 3.5 Haiku first
-            'fallback': 'claude-3-haiku-20240307',  # Fallback to 3.0
+            'name': 'claude-3-haiku-20240307',  # Stable version (Option C - fastest, cheapest)
+            'fallback': 'claude-3-haiku-20240307',  # Fallback to same stable version
             'input_cost': 0.00025,  # per 1K tokens (12x cheaper)
             'output_cost': 0.00125  # per 1K tokens (12x cheaper)
         }
