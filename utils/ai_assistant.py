@@ -19,7 +19,7 @@ class AIAssistant:
     # Model configurations with fallback options
     MODELS = {
         'sonnet': {
-            'name': 'claude-sonnet-4-20250514',  # Try Claude Sonnet 4 first
+            'name': 'claude-3-5-sonnet-20241022',  # Latest stable version
             'fallback': 'claude-3-5-sonnet-20241022',  # Fallback to 3.5
             'input_cost': 0.003,   # per 1K tokens
             'output_cost': 0.015   # per 1K tokens
