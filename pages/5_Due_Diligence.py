@@ -216,6 +216,45 @@ def render_project_overview_tab():
         "5. **Report** → Generate professional reports"
     )
 
+    st.markdown("---")
+    with st.expander("🔧 Debug: Session State Data"):
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.write("**Cost Data**")
+            cost_data = DDSessionStateManager.get_cost_data()
+            st.json(
+                {
+                    "total_development_cost": cost_data.total_development_cost,
+                    "total_hard_costs": cost_data.total_hard_costs,
+                    "total_soft_costs": cost_data.total_soft_costs,
+                    "gross_floor_area": cost_data.gross_floor_area,
+                    "source": cost_data.source,
+                }
+            )
+
+        with col2:
+            st.write("**Financing Data**")
+            fin = DDSessionStateManager.get_financing_data()
+            st.json(
+                {
+                    "construction_loan_amount": fin.construction_loan_amount,
+                    "investment_loan_amount": fin.investment_loan_amount,
+                    "total_equity_required": fin.total_equity_required,
+                    "dscr": fin.dscr,
+                    "source": fin.source,
+                }
+            )
+
+        with col3:
+            st.write("**Sync Status**")
+            status = DDSessionStateManager.get_sync_status()
+            st.json(status)
+
+        if st.button("🔄 Reset All Data", type="secondary"):
+            DDSessionStateManager.reset_all()
+            st.rerun()
+
 
 def render_quick_setup_tab():
     """快速设置标签页 - 简化输入"""
@@ -309,7 +348,7 @@ def render_cost_breakdown_tab():
 
         benchmarks = QLD_COST_BENCHMARKS.get(property_type, {})
         st.info(
-            f"💡 Typical construction rate: "
+            f"💡 Reference rate for {property_type.value}: "
             f"${benchmarks.get('construction_rate_typical', 1250):,.0f}/sqm"
         )
         council = QLD_GOVERNMENT_CHARGES.get(location, QLD_GOVERNMENT_CHARGES["brisbane"])
@@ -343,10 +382,15 @@ def render_cost_breakdown_tab():
         )
         construction_rate = st.number_input(
             "Construction Rate ($/sqm)",
-            min_value=800.0,
-            max_value=3000.0,
+            min_value=500.0,
+            max_value=5000.0,
             value=float(benchmarks.get("construction_rate_typical", 1250)),
             step=50.0,
+            help=(
+                f"Benchmark range: "
+                f"${benchmarks.get('construction_rate_min', 900):,.0f} - "
+                f"${benchmarks.get('construction_rate_max', 1800):,.0f}/sqm"
+            ),
         )
 
     with col2:
@@ -366,58 +410,130 @@ def render_cost_breakdown_tab():
         hardstand = st.number_input("Hardstand ($)", value=180000.0, step=10000.0)
         landscaping = st.number_input("Landscaping ($)", value=35000.0, step=5000.0)
         fencing = st.number_input("Fencing ($)", value=45000.0, step=5000.0)
+        site_works_total = (
+            site_clearing
+            + earthworks
+            + stormwater
+            + sewer
+            + water
+            + electrical
+            + road_works
+            + car_parking
+            + hardstand
+            + landscaping
+            + fencing
+        )
 
     with col3:
-        st.subheader("📋 Professional Fees (%)")
-        architect_pct = st.slider(
-            "Architect",
-            2.0,
-            5.0,
-            PROFESSIONAL_FEE_BENCHMARKS["architect"]["typical"],
-            0.5,
-        )
-        structural_pct = st.slider(
-            "Structural Engineer",
-            1.0,
-            2.5,
-            PROFESSIONAL_FEE_BENCHMARKS["structural_engineer"]["typical"],
-            0.5,
-        )
-        civil_pct = st.slider(
-            "Civil Engineer",
-            1.0,
-            2.0,
-            PROFESSIONAL_FEE_BENCHMARKS["civil_engineer"]["typical"],
-            0.5,
-        )
-        mep_pct = st.slider(
-            "MEP Engineer",
-            1.5,
-            3.0,
-            PROFESSIONAL_FEE_BENCHMARKS["mep_engineer"]["typical"],
-            0.5,
-        )
-        qs_pct = st.slider(
-            "Quantity Surveyor",
-            0.5,
-            1.5,
-            PROFESSIONAL_FEE_BENCHMARKS["quantity_surveyor"]["typical"],
-            0.5,
-        )
-        pm_pct = st.slider(
-            "Project Manager",
-            2.0,
-            5.0,
-            PROFESSIONAL_FEE_BENCHMARKS["project_manager"]["typical"],
-            0.5,
+        st.subheader("📋 Professional Fees")
+
+        fee_input_mode = st.radio(
+            "Input Mode",
+            options=["Percentage of Construction", "Fixed Amount"],
+            horizontal=True,
+            key="fee_input_mode",
         )
 
-        st.markdown("---")
-        st.subheader("⚠️ Contingency (%)")
-        design_contingency = st.slider("Design Contingency", 0.0, 10.0, 5.0, 1.0)
-        construction_contingency = st.slider(
-            "Construction Contingency", 0.0, 10.0, 5.0, 1.0
+        if fee_input_mode == "Percentage of Construction":
+            base_construction = gfa * construction_rate
+            st.caption(f"Base: ${base_construction:,.0f} (GFA × Rate)")
+
+            architect_pct = st.slider("Architect (%)", 1.0, 6.0, 3.0, 0.5)
+            structural_pct = st.slider("Structural Engineer (%)", 0.5, 3.0, 1.5, 0.5)
+            civil_pct = st.slider("Civil Engineer (%)", 0.5, 2.5, 1.5, 0.5)
+            mep_pct = st.slider("MEP Engineer (%)", 1.0, 4.0, 2.0, 0.5)
+            qs_pct = st.slider("Quantity Surveyor (%)", 0.5, 2.0, 1.0, 0.5)
+            pm_pct = st.slider("Project Manager (%)", 1.5, 6.0, 3.0, 0.5)
+
+            architect_fee = base_construction * (architect_pct / 100)
+            structural_fee = base_construction * (structural_pct / 100)
+            civil_fee = base_construction * (civil_pct / 100)
+            mep_fee = base_construction * (mep_pct / 100)
+            qs_fee = base_construction * (qs_pct / 100)
+            pm_fee = base_construction * (pm_pct / 100)
+        else:
+            architect_fee = st.number_input(
+                "Architect ($)", value=150000.0, step=10000.0
+            )
+            structural_fee = st.number_input(
+                "Structural Engineer ($)", value=75000.0, step=5000.0
+            )
+            civil_fee = st.number_input(
+                "Civil Engineer ($)", value=75000.0, step=5000.0
+            )
+            mep_fee = st.number_input("MEP Engineer ($)", value=100000.0, step=5000.0)
+            qs_fee = st.number_input(
+                "Quantity Surveyor ($)", value=50000.0, step=5000.0
+            )
+            pm_fee = st.number_input(
+                "Project Manager ($)", value=150000.0, step=10000.0
+            )
+
+            base_construction = gfa * construction_rate
+            if base_construction > 0:
+                architect_pct = (architect_fee / base_construction) * 100
+                structural_pct = (structural_fee / base_construction) * 100
+                civil_pct = (civil_fee / base_construction) * 100
+                mep_pct = (mep_fee / base_construction) * 100
+                qs_pct = (qs_fee / base_construction) * 100
+                pm_pct = (pm_fee / base_construction) * 100
+
+        total_professional_fees = (
+            architect_fee
+            + structural_fee
+            + civil_fee
+            + mep_fee
+            + qs_fee
+            + pm_fee
         )
+        st.metric("Total Professional Fees", f"${total_professional_fees:,.0f}")
+
+        st.markdown("---")
+        st.subheader("⚠️ Contingency")
+
+        contingency_mode = st.radio(
+            "Input Mode",
+            options=["Percentage", "Fixed Amount"],
+            horizontal=True,
+            key="contingency_input_mode",
+        )
+
+        base_for_contingency = (gfa * construction_rate) + site_works_total
+
+        if contingency_mode == "Percentage":
+            st.caption(
+                f"Base: ${base_for_contingency:,.0f} (Construction + Site Works)"
+            )
+
+            design_contingency_pct = st.slider(
+                "Design Contingency (%)", 0.0, 10.0, 5.0, 1.0
+            )
+            construction_contingency_pct = st.slider(
+                "Construction Contingency (%)", 0.0, 15.0, 5.0, 1.0
+            )
+
+            design_contingency = base_for_contingency * (design_contingency_pct / 100)
+            construction_contingency = base_for_contingency * (
+                construction_contingency_pct / 100
+            )
+        else:
+            design_contingency = st.number_input(
+                "Design Contingency ($)", value=250000.0, step=25000.0
+            )
+            construction_contingency = st.number_input(
+                "Construction Contingency ($)", value=250000.0, step=25000.0
+            )
+
+            if base_for_contingency > 0:
+                design_contingency_pct = (
+                    design_contingency / base_for_contingency
+                ) * 100
+                construction_contingency_pct = (
+                    construction_contingency / base_for_contingency
+                ) * 100
+
+        total_contingency = design_contingency + construction_contingency
+        st.metric("Total Contingency", f"${total_contingency:,.0f}")
 
         st.markdown("---")
         st.subheader("💰 Other Costs")
@@ -495,6 +611,41 @@ def render_cost_breakdown_tab():
         DDSessionStateManager.set_cost_data(cost_data)
         st.success("✅ Cost data calculated and synced!")
         st.info("💡 Data is now available in Loan Calculator and Financial Model tabs")
+
+        if st.button("💾 Save to Project", type="secondary", key="save_cost_to_project"):
+            if not st.session_state.selected_dd_project:
+                st.warning("Please select a DD project first.")
+            else:
+                base_construction = gfa * construction_rate
+                base_for_contingency = base_construction + site_works_total
+                contingency_pct = (
+                    (total_contingency / base_for_contingency) * 100
+                    if base_for_contingency > 0
+                    else 0
+                )
+                update_data = {
+                    "land_area_sqm": land_area,
+                    "building_area_sqm": gfa,
+                    "purchase_price": result["hard_costs"]["land_costs"][
+                        "land_purchase_price"
+                    ],
+                    "acquisition_costs": result["hard_costs"]["land_costs"][
+                        "acquisition_costs"
+                    ],
+                    "construction_cost": (
+                        result["hard_costs"]["construction_costs"][
+                            "base_construction_cost"
+                        ]
+                        + result["hard_costs"]["site_works"]["total"]
+                        + result["hard_costs"]["contingency"]["total_contingency"]
+                    ),
+                    "contingency_percentage": contingency_pct,
+                }
+                try:
+                    db.update_dd_project(st.session_state.selected_dd_project, update_data)
+                    st.success("✅ Saved cost data to project.")
+                except Exception as e:
+                    st.error(f"❌ Failed to save cost data: {e}")
 
     if "cost_breakdown_result" in st.session_state:
         result = st.session_state["cost_breakdown_result"]
@@ -671,6 +822,28 @@ def render_loan_calculator_tab():
                 value=8.5,
                 step=0.25,
             )
+
+            st.markdown("**Loan Fees**")
+            col_fee1, col_fee2 = st.columns(2)
+            with col_fee1:
+                establishment_fee_pct = st.number_input(
+                    "Establishment Fee (%)",
+                    min_value=0.0,
+                    max_value=3.0,
+                    value=1.0,
+                    step=0.25,
+                    help="One-time fee charged at loan setup",
+                )
+            with col_fee2:
+                line_fee_pct = st.number_input(
+                    "Line Fee (%)",
+                    min_value=0.0,
+                    max_value=2.0,
+                    value=0.5,
+                    step=0.25,
+                    help="Annual fee on undrawn facility",
+                )
+
             capitalize_interest = st.checkbox("Capitalize Interest", value=True)
 
             st.markdown("---")
@@ -703,6 +876,8 @@ def render_loan_calculator_tab():
                 construction_duration_months=construction_months,
                 construction_ltc=const_ltc,
                 construction_rate=const_rate,
+                construction_establishment_fee=establishment_fee_pct,
+                construction_line_fee=line_fee_pct,
                 capitalize_interest=capitalize_interest,
                 investment_lvr=inv_lvr,
                 investment_rate=inv_rate,
@@ -748,6 +923,25 @@ def render_loan_calculator_tab():
             )
             DDSessionStateManager.set_financing_data(financing_data)
             st.success("✅ Financing data calculated and synced!")
+
+            if st.button("💾 Save to Project", type="secondary", key="save_loan_to_project"):
+                if not st.session_state.selected_dd_project:
+                    st.warning("Please select a DD project first.")
+                else:
+                    update_data = {
+                        "construction_duration_months": construction_months,
+                        "equity_percentage": financing_data.equity_percentage,
+                        "debt_percentage": 100 - financing_data.equity_percentage,
+                        "interest_rate": const_rate,
+                        "loan_term_years": inv_term,
+                    }
+                    try:
+                        db.update_dd_project(
+                            st.session_state.selected_dd_project, update_data
+                        )
+                        st.success("✅ Saved financing data to project.")
+                    except Exception as e:
+                        st.error(f"❌ Failed to save financing data: {e}")
 
     with loan_tab2:
         st.subheader("📊 Construction Loan Analysis")
@@ -926,6 +1120,244 @@ def render_loan_calculator_tab():
                 delta_color=margin_color,
             )
 
+
+def render_financial_model_tab():
+    """渲染财务模型标签页"""
+    st.header("📊 Financial Model")
+
+    DDSessionStateManager.initialize()
+    cost_data = DDSessionStateManager.get_cost_data()
+    financing_data = DDSessionStateManager.get_financing_data()
+
+    if cost_data.total_development_cost <= 0:
+        st.warning("⚠️ Please complete the **Cost Breakdown** tab first.")
+        st.info("Required: Total Development Cost > 0")
+
+        with st.expander("🔍 Debug: Current Data Status"):
+            st.write("**Cost Data:**")
+            st.json(
+                {
+                    "total_development_cost": cost_data.total_development_cost,
+                    "total_hard_costs": cost_data.total_hard_costs,
+                    "total_soft_costs": cost_data.total_soft_costs,
+                    "source": cost_data.source,
+                }
+            )
+
+            st.write("**Financing Data:**")
+            st.json(
+                {
+                    "construction_loan_amount": financing_data.construction_loan_amount,
+                    "total_equity_required": financing_data.total_equity_required,
+                    "source": financing_data.source,
+                }
+            )
+        return
+
+    st.success(f"✅ Using development cost: ${cost_data.total_development_cost:,.0f}")
+    if financing_data.construction_loan_amount > 0:
+        st.success("✅ Using financing data from Loan Calculator")
+    else:
+        st.info("💡 Financing data not set - using default assumptions")
+
+    st.markdown('<div class="bento-card" style="margin: 1rem 0;">', unsafe_allow_html=True)
+    st.subheader("📊 Financial Model & Returns")
+
+    # 导入财务模型
+    from utils.financial_model import FinancialModel, format_currency, format_percentage
+
+    # 准备参数
+    model_params = {
+        "purchase_price": project.purchase_price or 0,
+        "acquisition_costs": project.acquisition_costs or 0,
+        "construction_cost": project.construction_cost or 0,
+        "construction_duration_months": project.construction_duration_months or 12,
+        "contingency_percentage": project.contingency_percentage or 10.0,
+        "equity_percentage": project.equity_percentage or 30.0,
+        "debt_percentage": project.debt_percentage or 70.0,
+        "interest_rate": project.interest_rate or 6.0,
+        "loan_term_years": project.loan_term_years or 25,
+        "estimated_monthly_rent": project.estimated_monthly_rent or 0,
+        "rent_growth_rate": project.rent_growth_rate or 3.0,
+        "occupancy_rate": project.occupancy_rate or 95.0,
+        "operating_expense_ratio": project.operating_expense_ratio or 30.0,
+        "holding_period_years": project.holding_period_years or 10,
+        "exit_cap_rate": project.exit_cap_rate or 6.5,
+    }
+
+    # 创建模型并计算
+    try:
+        model = FinancialModel(model_params)
+        returns = model.calculate_returns()
+        cf_model = returns["cash_flow_model"]
+
+        # ========== 顶部：关键指标卡片 ==========
+        st.write("### 🎯 Key Investment Metrics")
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            irr_color = "normal" if returns["irr"] and returns["irr"] > 15 else "inverse"
+            st.metric(
+                "IRR",
+                format_percentage(returns["irr"]),
+                help="Internal Rate of Return - Target: >15%",
+            )
+
+        with col2:
+            st.metric(
+                "Equity Multiple",
+                f"{returns['equity_multiple']:.2f}x"
+                if returns["equity_multiple"]
+                else "N/A",
+                help="Total return / Initial equity - Target: >2.0x",
+            )
+
+        with col3:
+            st.metric(
+                "NPV",
+                format_currency(returns["npv"]),
+                help="Net Present Value at 12% discount rate",
+            )
+
+        with col4:
+            dscr_color = (
+                "normal"
+                if returns["avg_dscr"] and returns["avg_dscr"] > 1.25
+                else "inverse"
+            )
+            st.metric(
+                "Avg DSCR",
+                f"{returns['avg_dscr']:.2f}x" if returns["avg_dscr"] else "N/A",
+                help="Debt Service Coverage Ratio - Min: 1.25x",
+            )
+
+        st.write("---")
+
+        # ========== 投资摘要 ==========
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.write("### 💰 Investment Summary")
+
+            summary_data = {
+                "Total Development Cost": format_currency(
+                    cf_model["development_costs"]["total_development_cost"]
+                ),
+                "Equity Required": format_currency(returns["total_equity_invested"]),
+                "Debt Financing": format_currency(cf_model["financing"]["debt_amount"]),
+                "Capitalized Interest": format_currency(
+                    cf_model["capitalized_interest"]
+                ),
+                "Total Loan at Completion": format_currency(
+                    cf_model["total_loan_at_completion"]
+                ),
+            }
+
+            for label, value in summary_data.items():
+                st.write(f"**{label}:** {value}")
+
+        with col2:
+            st.write("### 📈 Returns Summary")
+
+            returns_data = {
+                "Cash-on-Cash (Year 1)": format_percentage(
+                    returns["cash_on_cash_return"]
+                ),
+                "Profit Margin": format_percentage(returns["profit_margin"]),
+                "Total Return": format_currency(returns["total_return"]),
+                "Annual NOI (Stabilized)": format_currency(
+                    returns["annual_noi_stabilized"]
+                ),
+                "Exit Value": format_currency(returns["exit_value"]),
+            }
+
+            for label, value in returns_data.items():
+                st.write(f"**{label}:** {value}")
+
+        st.write("---")
+
+        # ========== Year by Year Cash Flow ==========
+        st.write("### 📊 Cash Flow Timeline")
+
+        # Create cash flow chart
+        years = list(range(len(returns["annual_cash_flows"])))
+        cash_flows = returns["annual_cash_flows"]
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Bar(
+                x=years,
+                y=cash_flows,
+                name="Annual Cash Flow",
+                marker_color=[
+                    "#d62728" if cf < 0 else "#2ca02c" for cf in cash_flows
+                ],
+            )
+        )
+
+        fig.update_layout(
+            title="Annual Cash Flow",
+            xaxis_title="Year",
+            yaxis_title="Cash Flow (AUD)",
+            height=400,
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.write("---")
+
+        # ========== Detailed Metrics ==========
+        with st.expander("📋 View Detailed Metrics"):
+            metrics_data = {
+                "IRR": format_percentage(returns["irr"]),
+                "NPV": format_currency(returns["npv"]),
+                "Equity Multiple": f"{returns['equity_multiple']:.2f}x",
+                "Cash-on-Cash Return": format_percentage(
+                    returns["cash_on_cash_return"]
+                ),
+                "Profit Margin": format_percentage(returns["profit_margin"]),
+                "Total Return": format_currency(returns["total_return"]),
+                "Total Equity Invested": format_currency(
+                    returns["total_equity_invested"]
+                ),
+                "Debt Amount": format_currency(returns["debt_amount"]),
+                "Exit Value": format_currency(returns["exit_value"]),
+                "Annual NOI (Stabilized)": format_currency(
+                    returns["annual_noi_stabilized"]
+                ),
+                "Average DSCR": f"{returns['avg_dscr']:.2f}x"
+                if returns["avg_dscr"]
+                else "N/A",
+            }
+
+            df = pd.DataFrame(
+                [{"Metric": k, "Value": v} for k, v in metrics_data.items()]
+            )
+            st.dataframe(df, use_container_width=True, hide_index=True)
+
+        # ========== Save ==========
+        st.write("---")
+        if st.button("💾 Save Calculated Metrics to Project", width="stretch"):
+            update_data = {
+                "irr": returns["irr"],
+                "npv": returns["npv"],
+                "equity_multiple": returns["equity_multiple"],
+                "cash_on_cash_return": returns["cash_on_cash_return"],
+            }
+
+            db.update_dd_project(project.id, update_data)
+            st.success("✅ Metrics saved to project!")
+            st.rerun()
+
+    except Exception as e:
+        st.error(f"❌ Error calculating financial model: {e}")
+        import traceback
+        with st.expander("🔍 Error Details"):
+            st.code(traceback.format_exc())
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
 # ==================== 顶部：项目选择 ====================
 col1, col2 = st.columns([3, 1])
 
@@ -1001,401 +1433,8 @@ if st.session_state.selected_dd_project:
 
     # ===== Tab 5: Financial Model =====
     with tab5:
-        st.markdown('<div class="bento-card" style="margin: 1rem 0;">', unsafe_allow_html=True)
-        st.subheader("📊 Financial Model & Returns")
-        
-        # 检查是否所有必需参数都已填写
-        required_params = [
-            'purchase_price', 'construction_cost', 'estimated_monthly_rent'
-        ]
-        
-        missing_params = [p for p in required_params if not project.__dict__.get(p)]
-        
-        if missing_params:
-            st.warning(
-                "⚠️ Please fill in required parameters in the Cost Breakdown or Loan Calculator tabs."
-            )
-        else:
-            # 导入财务模型
-            from utils.financial_model import FinancialModel, format_currency, format_percentage
-            
-            # 准备参数
-            model_params = {
-                'purchase_price': project.purchase_price or 0,
-                'acquisition_costs': project.acquisition_costs or 0,
-                'construction_cost': project.construction_cost or 0,
-                'construction_duration_months': project.construction_duration_months or 12,
-                'contingency_percentage': project.contingency_percentage or 10.0,
-                'equity_percentage': project.equity_percentage or 30.0,
-                'debt_percentage': project.debt_percentage or 70.0,
-                'interest_rate': project.interest_rate or 6.0,
-                'loan_term_years': project.loan_term_years or 25,
-                'estimated_monthly_rent': project.estimated_monthly_rent or 0,
-                'rent_growth_rate': project.rent_growth_rate or 3.0,
-                'occupancy_rate': project.occupancy_rate or 95.0,
-                'operating_expense_ratio': project.operating_expense_ratio or 30.0,
-                'holding_period_years': project.holding_period_years or 10,
-                'exit_cap_rate': project.exit_cap_rate or 6.5
-            }
-            
-            # 创建模型并计算
-            try:
-                model = FinancialModel(model_params)
-                returns = model.calculate_returns()
-                cf_model = returns['cash_flow_model']
-                
-                # ========== 顶部：关键指标卡片 ==========
-                st.write("### 🎯 Key Investment Metrics")
-                
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    irr_color = "normal" if returns['irr'] and returns['irr'] > 15 else "inverse"
-                    st.metric(
-                        "IRR",
-                        format_percentage(returns['irr']),
-                        help="Internal Rate of Return - Target: >15%"
-                    )
-                
-                with col2:
-                    st.metric(
-                        "Equity Multiple",
-                        f"{returns['equity_multiple']:.2f}x" if returns['equity_multiple'] else "N/A",
-                        help="Total return / Initial equity - Target: >2.0x"
-                    )
-                
-                with col3:
-                    st.metric(
-                        "NPV",
-                        format_currency(returns['npv']),
-                        help="Net Present Value at 12% discount rate"
-                    )
-                
-                with col4:
-                    dscr_color = "normal" if returns['avg_dscr'] and returns['avg_dscr'] > 1.25 else "inverse"
-                    st.metric(
-                        "Avg DSCR",
-                        f"{returns['avg_dscr']:.2f}x" if returns['avg_dscr'] else "N/A",
-                        help="Debt Service Coverage Ratio - Min: 1.25x"
-                    )
-                
-                st.write("---")
-                
-                # ========== 投资摘要 ==========
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.write("### 💰 Investment Summary")
-                    
-                    summary_data = {
-                        "Total Development Cost": format_currency(cf_model['development_costs']['total_development_cost']),
-                        "Equity Required": format_currency(returns['total_equity_invested']),
-                        "Debt Financing": format_currency(cf_model['financing']['debt_amount']),
-                        "Capitalized Interest": format_currency(cf_model['capitalized_interest']),
-                        "Total Loan at Completion": format_currency(cf_model['total_loan_at_completion'])
-                    }
-                    
-                    for label, value in summary_data.items():
-                        st.write(f"**{label}:** {value}")
-                
-                with col2:
-                    st.write("### 📈 Returns Summary")
-                    
-                    returns_data = {
-                        "Cash-on-Cash (Year 1)": format_percentage(returns['cash_on_cash_return']),
-                        "Profit Margin": format_percentage(returns['profit_margin']),
-                        "Exit Value": format_currency(cf_model['exit_value']),
-                        "Equity Proceeds": format_currency(returns['total_equity_returned']),
-                        "Total Profit": format_currency(returns['total_profit'])
-                    }
-                    
-                    for label, value in returns_data.items():
-                        st.write(f"**{label}:** {value}")
-                
-                st.write("---")
-                
-                # ========== 开发成本明细 ==========
-                st.write("### 🏗️ Development Cost Breakdown")
-                
-                costs = cf_model['development_costs']
-                
-                cost_df = pd.DataFrame([
-                    {"Category": "Land Acquisition", "Amount": costs['land_cost']},
-                    {"Category": "Acquisition Costs", "Amount": costs['acquisition_costs']},
-                    {"Category": "Hard Costs", "Amount": costs['hard_costs']},
-                    {"Category": "Contingency", "Amount": costs['contingency']},
-                    {"Category": "Soft Costs", "Amount": costs['soft_costs']},
-                    {"Category": "Total", "Amount": costs['total_development_cost'], "bold": True}
-                ])
-                
-                # 创建饼图
-                import plotly.graph_objects as go
-                
-                pie_data = [
-                    costs['total_land'],
-                    costs['hard_costs'],
-                    costs['contingency'],
-                    costs['soft_costs']
-                ]
-                
-                pie_labels = ['Land & Acquisition', 'Hard Costs', 'Contingency', 'Soft Costs']
-                
-                fig_pie = go.Figure(data=[go.Pie(
-                    labels=pie_labels,
-                    values=pie_data,
-                    hole=0.3,
-                    marker=dict(colors=['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A'])
-                )])
-                
-                fig_pie.update_layout(
-                    title="Cost Distribution",
-                    height=400
-                )
-                
-                fig_pie = apply_professional_theme_to_figure(fig_pie, theme='light')
-                
-                col1, col2 = st.columns([1, 1])
-                
-                with col1:
-                    # 显示表格
-                    for _, row in cost_df.iterrows():
-                        if row.get('bold'):
-                            st.write(f"**{row['Category']}:** **{format_currency(row['Amount'])}**")
-                        else:
-                            st.write(f"{row['Category']}: {format_currency(row['Amount'])}")
-                
-                with col2:
-                    st.plotly_chart(fig_pie, width='stretch')
-                
-                st.write("---")
-                
-                # ========== 施工贷款提款时间表 ==========
-                st.write("### 🏦 Construction Loan Draw Schedule")
-                
-                draws = cf_model['construction_draws']
-                
-                if draws:
-                    # 创建提款可视化
-                    draw_months = [d['month'] for d in draws]
-                    draw_amounts = [d['draw_amount'] / 1e6 for d in draws]  # 转换为百万
-                    cumulative_draws = [d['cumulative_draw'] / 1e6 for d in draws]
-                    cumulative_interest = [d['cumulative_interest'] / 1e6 for d in draws]
-                    
-                    fig_draws = go.Figure()
-                    
-                    fig_draws.add_trace(go.Bar(
-                        x=draw_months,
-                        y=draw_amounts,
-                        name='Monthly Draw',
-                        marker_color='#4ECDC4'
-                    ))
-                    
-                    fig_draws.add_trace(go.Scatter(
-                        x=draw_months,
-                        y=cumulative_draws,
-                        name='Cumulative Draws',
-                        mode='lines+markers',
-                        line=dict(color='#FF6B6B', width=2),
-                        yaxis='y2'
-                    ))
-                    
-                    fig_draws.add_trace(go.Scatter(
-                        x=draw_months,
-                        y=cumulative_interest,
-                        name='Cumulative Interest',
-                        mode='lines+markers',
-                        line=dict(color='#FFA07A', width=2, dash='dash'),
-                        yaxis='y2'
-                    ))
-                    
-                    fig_draws.update_layout(
-                        title="Construction Draw Schedule",
-                        xaxis_title="Month",
-                        yaxis_title="Monthly Draw ($M)",
-                        yaxis2=dict(
-                            title="Cumulative ($M)",
-                            overlaying='y',
-                            side='right'
-                        ),
-                        hovermode='x unified',
-                        height=400
-                    )
-                    
-                    fig_draws = apply_professional_theme_to_figure(fig_draws, theme='light')
-                    
-                    st.plotly_chart(fig_draws, width='stretch')
-                    
-                    # 显示汇总
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Total Drawn", format_currency(draws[-1]['cumulative_draw']))
-                    with col2:
-                        st.metric("Capitalized Interest", format_currency(draws[-1]['cumulative_interest']))
-                    with col3:
-                        st.metric("Total Loan Balance", format_currency(draws[-1]['outstanding_balance']))
-                
-                st.write("---")
-                
-                # ========== 年度现金流 ==========
-                st.write("### 💵 Annual Cash Flow Projections")
-                
-                annual_cfs = cf_model['annual_cash_flows']
-                
-                # 准备数据
-                years = []
-                noi_values = []
-                debt_service_values = []
-                cash_flow_values = []
-                cumulative_cf_values = []
-                
-                for cf in annual_cfs:
-                    if cf['period'] != 'Development':
-                        years.append(cf['year'])
-                        noi_values.append(cf.get('noi', 0) / 1e6)
-                        debt_service_values.append(cf.get('debt_service', 0) / 1e6)
-                        
-                        # Exit year combines operating + exit CF
-                        if cf['period'] == 'Exit':
-                            total_cf = cf.get('equity_proceeds', 0) / 1e6
-                        else:
-                            total_cf = cf.get('cash_flow', 0) / 1e6
-                        
-                        cash_flow_values.append(total_cf)
-                        cumulative_cf_values.append(cf.get('cumulative_cash_flow', 0) / 1e6)
-                
-                # 创建现金流图表
-                fig_cf = go.Figure()
-                
-                fig_cf.add_trace(go.Bar(
-                    x=years,
-                    y=noi_values,
-                    name='NOI',
-                    marker_color='#4ECDC4'
-                ))
-                
-                fig_cf.add_trace(go.Bar(
-                    x=years,
-                    y=[-d for d in debt_service_values],
-                    name='Debt Service',
-                    marker_color='#FF6B6B'
-                ))
-                
-                fig_cf.add_trace(go.Scatter(
-                    x=years,
-                    y=cash_flow_values,
-                    name='Net Cash Flow',
-                    mode='lines+markers',
-                    line=dict(color='#45B7D1', width=3),
-                    yaxis='y2'
-                ))
-                
-                fig_cf.update_layout(
-                    title="Annual Cash Flows",
-                    xaxis_title="Year",
-                    yaxis_title="NOI / Debt Service ($M)",
-                    yaxis2=dict(
-                        title="Net Cash Flow ($M)",
-                        overlaying='y',
-                        side='right'
-                    ),
-                    barmode='relative',
-                    hovermode='x unified',
-                    height=450
-                )
-                
-                fig_cf = apply_professional_theme_to_figure(fig_cf, theme='light')
-                
-                st.plotly_chart(fig_cf, width='stretch')
-                
-                # ========== 累计现金流 ==========
-                fig_cumulative = go.Figure()
-                
-                # 添加Year 0
-                all_years = [0] + years
-                all_cumulative = [-returns['total_equity_invested']/1e6] + cumulative_cf_values
-                
-                fig_cumulative.add_trace(go.Scatter(
-                    x=all_years,
-                    y=all_cumulative,
-                    mode='lines+markers',
-                    fill='tozeroy',
-                    line=dict(color='#4ECDC4', width=3),
-                    marker=dict(size=8)
-                ))
-                
-                # 添加零线
-                fig_cumulative.add_hline(y=0, line_dash="dash", line_color="gray")
-                
-                fig_cumulative.update_layout(
-                    title="Cumulative Cash Flow",
-                    xaxis_title="Year",
-                    yaxis_title="Cumulative Cash Flow ($M)",
-                    hovermode='x unified',
-                    height=400
-                )
-                
-                fig_cumulative = apply_professional_theme_to_figure(fig_cumulative, theme='light')
-                
-                st.plotly_chart(fig_cumulative, width='stretch')
-                
-                # ========== 详细现金流表 ==========
-                with st.expander("📋 View Detailed Cash Flow Table"):
-                    cf_table_data = []
-                    
-                    for cf in annual_cfs:
-                        if cf['period'] == 'Development':
-                            cf_table_data.append({
-                                'Year': 0,
-                                'Period': 'Development',
-                                'Equity Invested': format_currency(abs(cf['equity_invested'])),
-                                'NOI': '-',
-                                'Debt Service': '-',
-                                'Cash Flow': format_currency(cf['cash_flow']),
-                                'Cumulative CF': format_currency(cf['cumulative_cash_flow'])
-                            })
-                        elif cf['period'] == 'Exit':
-                            cf_table_data.append({
-                                'Year': cf['year'],
-                                'Period': 'Exit',
-                                'Exit Value': format_currency(cf.get('exit_value', 0)),
-                                'Loan Payoff': format_currency(cf.get('loan_payoff', 0)),
-                                'Equity Proceeds': format_currency(cf.get('equity_proceeds', 0)),
-                                'Cash Flow': format_currency(cf['cash_flow']),
-                                'Cumulative CF': format_currency(cf.get('cumulative_cash_flow', 0))
-                            })
-                        else:
-                            cf_table_data.append({
-                                'Year': cf['year'],
-                                'Period': 'Operating',
-                                'NOI': format_currency(cf.get('noi', 0)),
-                                'Debt Service': format_currency(cf.get('debt_service', 0)),
-                                'Cash Flow': format_currency(cf['cash_flow']),
-                                'Cumulative CF': format_currency(cf['cumulative_cash_flow'])
-                            })
-                    
-                    st.dataframe(pd.DataFrame(cf_table_data), width='stretch')
-                
-                # ========== 保存计算结果到项目 ==========
-                if st.button("💾 Save Calculated Metrics to Project", width='stretch'):
-                    update_data = {
-                        'irr': returns['irr'],
-                        'npv': returns['npv'],
-                        'equity_multiple': returns['equity_multiple'],
-                        'cash_on_cash_return': returns['cash_on_cash_return']
-                    }
-                    
-                    db.update_dd_project(project.id, update_data)
-                    st.success("✅ Metrics saved to project!")
-                    st.rerun()
-                
-            except Exception as e:
-                st.error(f"❌ Error calculating financial model: {e}")
-                import traceback
-                with st.expander("🔍 Error Details"):
-                    st.code(traceback.format_exc())
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
+        render_financial_model_tab()
+
     # ===== Tab 6: Scenarios =====
     with tab6:
         st.markdown('<div class="bento-card" style="margin: 1rem 0;">', unsafe_allow_html=True)

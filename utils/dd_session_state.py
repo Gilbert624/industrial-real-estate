@@ -220,6 +220,26 @@ class DDSessionStateManager:
         return st.session_state[cls.SYNC_STATUS_KEY]
 
     @classmethod
+    def is_cost_data_complete(cls) -> bool:
+        """检查成本数据是否完整"""
+        cost = cls.get_cost_data()
+        return cost.total_development_cost > 0
+
+    @classmethod
+    def is_financing_data_complete(cls) -> bool:
+        """检查融资数据是否完整"""
+        financing = cls.get_financing_data()
+        return (
+            financing.construction_loan_amount > 0
+            or financing.total_equity_required > 0
+        )
+
+    @classmethod
+    def is_ready_for_financial_model(cls) -> bool:
+        """检查是否可以运行财务模型"""
+        return cls.is_cost_data_complete()
+
+    @classmethod
     def reset_all(cls):
         """重置所有数据"""
         st.session_state[cls.COST_DATA_KEY] = ProjectCostData()
