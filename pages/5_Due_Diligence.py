@@ -771,11 +771,12 @@ def render_loan_calculator_tab():
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("🏗️ Project Parameters")
+            max_dev_cost = 500_000_000.0
             total_dev_cost = st.number_input(
                 "Total Development Cost ($)",
                 min_value=1_000_000.0,
-                max_value=100_000_000.0,
-                value=default_dev_cost,
+                max_value=max_dev_cost,
+                value=min(default_dev_cost, max_dev_cost),
                 step=100_000.0,
                 help="From Cost Breakdown tab or enter manually",
             )
