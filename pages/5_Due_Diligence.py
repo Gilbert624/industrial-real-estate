@@ -1,19 +1,37 @@
 import streamlit as st
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from models.database import DatabaseManager
 from datetime import datetime
 import pandas as pd
 from config.theme import generate_css
 from utils.chart_styles import get_chart_layout, apply_professional_theme_to_figure, CHART_COLORS
 from config.i18n import t, get_current_language
+from utils.development_costs import (
+    DevelopmentCostBreakdown,
+    SiteWorksBreakdown,
+    PropertyType,
+    QLD_COST_BENCHMARKS,
+    QLD_GOVERNMENT_CHARGES,
+    PROFESSIONAL_FEE_BENCHMARKS,
+)
+from utils.loan_calculator import DualPhaseLoanModel, AU_LOAN_BENCHMARKS
+from utils.session_state_manager import (
+    DDSessionStateManager,
+    ProjectCostData,
+    ProjectFinancingData,
+    ProjectFinancialMetrics,
+    DataSource,
+    render_data_sync_status,
+)
 
 # 页面配置
-st.set_page_config(page_title="Due Diligence", page_icon="🔍", layout="wide")
+st.set_page_config(page_title="Due Diligence - Industrial RE", page_icon="🔍", layout="wide")
 
 # 应用专业主题
 st.markdown(generate_css('light'), unsafe_allow_html=True)
 
-st.title(f"🔍 {t('dd.title')}")
+st.title("🔍 Due Diligence Analysis")
 st.write(t('dd.subtitle'))
 
 # 初始化
@@ -22,6 +40,891 @@ db = DatabaseManager()
 # Session state
 if 'selected_dd_project' not in st.session_state:
     st.session_state.selected_dd_project = None
+
+
+def render_project_overview_tab():
+    """渲染项目概览标签页 - 汇总显示"""
+    st.header("📋 Project Overview")
+
+    # 初始化状态管理器
+    DDSessionStateManager.initialize()
+
+    # 显示同步状态
+    st.subheader("📊 Data Status")
+    render_data_sync_status()
+
+    st.markdown("---")
+
+    # 获取汇总数据
+    summary = DDSessionStateManager.get_summary_for_display()
+    cost = summary["cost"]
+    financing = summary["financing"]
+    metrics = summary["metrics"]
+
+    # 检查是否有数据
+    has_cost_data = cost["total_development_cost"] > 0
+    has_financing_data = financing["construction_loan"] > 0
+    has_metrics_data = metrics["irr"] != 0
+
+    if not has_cost_data:
+        st.info("👉 Please start by entering cost details in the **Cost Breakdown** tab")
+
+        # 快速开始选项
+        st.subheader("🚀 Quick Start")
+
+        if st.button("Load Sunshine Coast Warehouse Example", type="primary"):
+            from utils.development_costs import create_sunshine_coast_warehouse_example
+
+            example = create_sunshine_coast_warehouse_example()
+            result = example.calculate_total_development_cost()
+
+            cost_data = ProjectCostData(
+                land_area_sqm=example.land_area_sqm,
+                land_price_per_sqm=example.land_price_per_sqm,
+                land_purchase_price=result["hard_costs"]["land_costs"][
+                    "land_purchase_price"
+                ],
+                total_land_cost=result["hard_costs"]["land_costs"]["total_land_cost"],
+                gross_floor_area=example.gross_floor_area,
+                construction_rate_per_sqm=example.construction_rate_per_sqm,
+                base_construction_cost=result["hard_costs"]["construction_costs"][
+                    "base_construction_cost"
+                ],
+                total_site_works=result["hard_costs"]["site_works"]["total"],
+                total_contingency=result["hard_costs"]["contingency"][
+                    "total_contingency"
+                ],
+                total_professional_fees=result["soft_costs"]["professional_fees"]["total"],
+                total_government_charges=result["soft_costs"]["government_charges"][
+                    "total"
+                ],
+                total_hard_costs=result["summary"]["total_hard_costs"],
+                total_soft_costs=result["summary"]["total_soft_costs"],
+                total_development_cost=result["summary"]["total_development_cost"],
+                source=DataSource.COST_BREAKDOWN.value,
+            )
+            DDSessionStateManager.set_cost_data(cost_data)
+            st.rerun()
+
+        return
+
+    # 显示汇总数据
+    st.subheader("💰 Cost Summary")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric(
+            "Total Development Cost",
+            f"${cost['total_development_cost']:,.0f}",
+        )
+
+    with col2:
+        st.metric(
+            "Hard Costs",
+            f"${cost['total_hard_costs']:,.0f}",
+        )
+
+    with col3:
+        st.metric(
+            "Soft Costs",
+            f"${cost['total_soft_costs']:,.0f}",
+        )
+
+    with col4:
+        st.metric(
+            "Cost per sqm",
+            f"${cost['cost_per_sqm']:,.0f}",
+        )
+
+    if has_financing_data:
+        st.markdown("---")
+        st.subheader("🏦 Financing Summary")
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric(
+                "Construction Loan",
+                f"${financing['construction_loan']:,.0f}",
+            )
+
+        with col2:
+            st.metric(
+                "Investment Loan",
+                f"${financing['investment_loan']:,.0f}",
+            )
+
+        with col3:
+            st.metric(
+                "Total Equity",
+                f"${financing['total_equity']:,.0f}",
+                f"{financing['equity_pct']:.1f}%",
+            )
+
+        with col4:
+            dscr_color = "normal" if financing["dscr"] >= 1.25 else "inverse"
+            st.metric(
+                "DSCR",
+                f"{financing['dscr']:.2f}x" if financing["dscr"] > 0 else "N/A",
+                delta_color=dscr_color,
+            )
+    else:
+        st.info("👉 Configure financing in the **Loan Calculator** tab")
+
+    if has_metrics_data:
+        st.markdown("---")
+        st.subheader("📈 Return Metrics")
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            irr_color = "normal" if metrics["irr"] >= 15 else "inverse"
+            st.metric(
+                "IRR",
+                f"{metrics['irr']:.1f}%",
+                delta_color=irr_color,
+            )
+
+        with col2:
+            st.metric(
+                "NPV",
+                f"${metrics['npv']:,.0f}",
+            )
+
+        with col3:
+            st.metric(
+                "Equity Multiple",
+                f"{metrics['equity_multiple']:.2f}x",
+            )
+
+        with col4:
+            st.metric(
+                "Profit Margin",
+                f"{metrics['profit_margin']:.1f}%",
+            )
+    else:
+        st.info("👉 Calculate returns in the **Financial Model** tab")
+
+    st.markdown("---")
+    st.caption(
+        "**Data Flow:**\n"
+        "1. **Cost Breakdown** → Enter detailed development costs\n"
+        "2. **Loan Calculator** → Configure construction & investment loans  \n"
+        "3. **Financial Model** → Calculate IRR, NPV, and returns\n"
+        "4. **Scenarios** → Run sensitivity analysis\n"
+        "5. **Report** → Generate professional reports"
+    )
+
+
+def render_quick_setup_tab():
+    """快速设置标签页 - 简化输入"""
+    st.header("⚡ Quick Setup")
+    st.markdown("Quick project setup for rapid feasibility analysis")
+
+    with st.form("quick_setup_form"):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("Project Basics")
+            land_cost = st.number_input("Land Cost ($)", value=2_975_000.0)
+            construction_cost = st.number_input(
+                "Construction Cost ($)", value=5_250_000.0
+            )
+            other_costs = st.number_input(
+                "Other Development Costs ($)", value=800_000.0
+            )
+
+        with col2:
+            st.subheader("Financing")
+            ltc = st.slider("Loan-to-Cost %", 50, 75, 65)
+            interest_rate = st.slider("Blended Interest Rate %", 6.0, 10.0, 7.5)
+            completion_value = st.number_input(
+                "Expected Completion Value ($)", value=10_200_000.0
+            )
+
+        submitted = st.form_submit_button("Apply Quick Setup", type="primary")
+
+        if submitted:
+            total_dev_cost = land_cost + construction_cost + other_costs
+
+            cost_data = ProjectCostData(
+                total_land_cost=land_cost,
+                base_construction_cost=construction_cost,
+                total_soft_costs=other_costs,
+                total_hard_costs=land_cost + construction_cost,
+                total_development_cost=total_dev_cost,
+                source=DataSource.MANUAL.value,
+            )
+            DDSessionStateManager.set_cost_data(cost_data)
+
+            financing_data = ProjectFinancingData(
+                construction_ltc_pct=ltc,
+                construction_loan_amount=total_dev_cost * (ltc / 100),
+                construction_interest_rate=interest_rate,
+                completion_value=completion_value,
+                investment_lvr_pct=60,
+                investment_loan_amount=completion_value * 0.6,
+                total_equity_required=total_dev_cost * (1 - ltc / 100),
+                equity_percentage=100 - ltc,
+                source=DataSource.MANUAL.value,
+            )
+            DDSessionStateManager.set_financing_data(financing_data)
+
+            st.success("✅ Quick setup applied! Data synced to all tabs.")
+            st.info(
+                "💡 For detailed breakdown, use the Cost Breakdown and Loan Calculator tabs."
+            )
+
+
+def render_cost_breakdown_tab():
+    """渲染成本细分标签页 - 更新版"""
+    st.header("💵 Development Cost Breakdown")
+    st.markdown(
+        "Detailed cost analysis for industrial property development in Queensland"
+    )
+
+    DDSessionStateManager.initialize()
+    sync_status = DDSessionStateManager.get_sync_status()
+    if sync_status["cost_updated"]:
+        st.success("✅ Cost data is synced with other tabs")
+
+    col1, col2, col3 = st.columns([1, 1, 1])
+
+    with col1:
+        st.subheader("🏗️ Project Parameters")
+        project_name = st.text_input(
+            "Project Name", value="Industrial Warehouse Project"
+        )
+        location = st.selectbox(
+            "Location",
+            options=["brisbane", "sunshine_coast", "moreton_bay"],
+            format_func=lambda x: x.replace("_", " ").title(),
+        )
+        property_type = st.selectbox(
+            "Property Type",
+            options=[pt for pt in PropertyType],
+            format_func=lambda x: x.value.replace("_", " ").title(),
+        )
+
+        benchmarks = QLD_COST_BENCHMARKS.get(property_type, {})
+        st.info(
+            f"💡 Typical construction rate: "
+            f"${benchmarks.get('construction_rate_typical', 1250):,.0f}/sqm"
+        )
+        council = QLD_GOVERNMENT_CHARGES.get(location, QLD_GOVERNMENT_CHARGES["brisbane"])
+        st.caption(
+            f"Queensland infra charge: "
+            f"${council['infrastructure_charge_per_sqm']:.0f}/sqm"
+        )
+
+        st.markdown("---")
+        st.subheader("📐 Area & Land")
+        land_area = st.number_input(
+            "Land Area (sqm)",
+            min_value=1000.0,
+            max_value=100000.0,
+            value=8500.0,
+            step=100.0,
+        )
+        land_price = st.number_input(
+            "Land Price ($/sqm)",
+            min_value=100.0,
+            max_value=2000.0,
+            value=350.0,
+            step=10.0,
+        )
+        gfa = st.number_input(
+            "Gross Floor Area (sqm)",
+            min_value=500.0,
+            max_value=50000.0,
+            value=4200.0,
+            step=100.0,
+        )
+        construction_rate = st.number_input(
+            "Construction Rate ($/sqm)",
+            min_value=800.0,
+            max_value=3000.0,
+            value=float(benchmarks.get("construction_rate_typical", 1250)),
+            step=50.0,
+        )
+
+    with col2:
+        st.subheader("🔧 Site Works")
+        site_clearing = st.number_input("Site Clearing ($)", value=25000.0, step=5000.0)
+        earthworks = st.number_input("Earthworks ($)", value=150000.0, step=10000.0)
+        stormwater = st.number_input(
+            "Stormwater Drainage ($)", value=80000.0, step=5000.0
+        )
+        sewer = st.number_input("Sewer Connection ($)", value=35000.0, step=5000.0)
+        water = st.number_input("Water Connection ($)", value=25000.0, step=5000.0)
+        electrical = st.number_input(
+            "Electrical Connection ($)", value=45000.0, step=5000.0
+        )
+        road_works = st.number_input("Road Works ($)", value=120000.0, step=10000.0)
+        car_parking = st.number_input("Car Parking ($)", value=85000.0, step=5000.0)
+        hardstand = st.number_input("Hardstand ($)", value=180000.0, step=10000.0)
+        landscaping = st.number_input("Landscaping ($)", value=35000.0, step=5000.0)
+        fencing = st.number_input("Fencing ($)", value=45000.0, step=5000.0)
+
+    with col3:
+        st.subheader("📋 Professional Fees (%)")
+        architect_pct = st.slider(
+            "Architect",
+            2.0,
+            5.0,
+            PROFESSIONAL_FEE_BENCHMARKS["architect"]["typical"],
+            0.5,
+        )
+        structural_pct = st.slider(
+            "Structural Engineer",
+            1.0,
+            2.5,
+            PROFESSIONAL_FEE_BENCHMARKS["structural_engineer"]["typical"],
+            0.5,
+        )
+        civil_pct = st.slider(
+            "Civil Engineer",
+            1.0,
+            2.0,
+            PROFESSIONAL_FEE_BENCHMARKS["civil_engineer"]["typical"],
+            0.5,
+        )
+        mep_pct = st.slider(
+            "MEP Engineer",
+            1.5,
+            3.0,
+            PROFESSIONAL_FEE_BENCHMARKS["mep_engineer"]["typical"],
+            0.5,
+        )
+        qs_pct = st.slider(
+            "Quantity Surveyor",
+            0.5,
+            1.5,
+            PROFESSIONAL_FEE_BENCHMARKS["quantity_surveyor"]["typical"],
+            0.5,
+        )
+        pm_pct = st.slider(
+            "Project Manager",
+            2.0,
+            5.0,
+            PROFESSIONAL_FEE_BENCHMARKS["project_manager"]["typical"],
+            0.5,
+        )
+
+        st.markdown("---")
+        st.subheader("⚠️ Contingency (%)")
+        design_contingency = st.slider("Design Contingency", 0.0, 10.0, 5.0, 1.0)
+        construction_contingency = st.slider(
+            "Construction Contingency", 0.0, 10.0, 5.0, 1.0
+        )
+
+        st.markdown("---")
+        st.subheader("💰 Other Costs")
+        legal_fees = st.number_input("Legal Fees ($)", value=30000.0, step=5000.0)
+        valuation_fees = st.number_input(
+            "Valuation Fees ($)", value=8000.0, step=1000.0
+        )
+
+    st.markdown("---")
+    if st.button("📊 Calculate & Sync", type="primary", use_container_width=True):
+        site_works_obj = SiteWorksBreakdown(
+            site_clearing=site_clearing,
+            earthworks=earthworks,
+            stormwater_drainage=stormwater,
+            sewer_connection=sewer,
+            water_connection=water,
+            electrical_connection=electrical,
+            road_works=road_works,
+            car_parking=car_parking,
+            hardstand=hardstand,
+            landscaping=landscaping,
+            fencing=fencing,
+        )
+        cost_model = DevelopmentCostBreakdown(
+            project_name=project_name,
+            location=location,
+            property_type=property_type,
+            land_area_sqm=land_area,
+            land_price_per_sqm=land_price,
+            gross_floor_area=gfa,
+            construction_rate_per_sqm=construction_rate,
+            site_works=site_works_obj,
+            design_contingency_pct=design_contingency,
+            construction_contingency_pct=construction_contingency,
+            architect_pct=architect_pct,
+            structural_engineer_pct=structural_pct,
+            civil_engineer_pct=civil_pct,
+            mep_engineer_pct=mep_pct,
+            quantity_surveyor_pct=qs_pct,
+            project_manager_pct=pm_pct,
+            legal_fees=legal_fees,
+            valuation_fees=valuation_fees,
+        )
+
+        result = cost_model.calculate_total_development_cost()
+        st.session_state["cost_breakdown_result"] = result
+        st.session_state["cost_model"] = cost_model
+
+        cost_data = ProjectCostData(
+            land_area_sqm=land_area,
+            land_price_per_sqm=land_price,
+            land_purchase_price=result["hard_costs"]["land_costs"][
+                "land_purchase_price"
+            ],
+            land_acquisition_costs=result["hard_costs"]["land_costs"][
+                "acquisition_costs"
+            ],
+            total_land_cost=result["hard_costs"]["land_costs"]["total_land_cost"],
+            gross_floor_area=gfa,
+            construction_rate_per_sqm=construction_rate,
+            base_construction_cost=result["hard_costs"]["construction_costs"][
+                "base_construction_cost"
+            ],
+            total_site_works=result["hard_costs"]["site_works"]["total"],
+            total_contingency=result["hard_costs"]["contingency"]["total_contingency"],
+            total_professional_fees=result["soft_costs"]["professional_fees"]["total"],
+            total_government_charges=result["soft_costs"]["government_charges"]["total"],
+            total_other_soft_costs=sum(result["soft_costs"]["other_costs"].values()),
+            total_hard_costs=result["summary"]["total_hard_costs"],
+            total_soft_costs=result["summary"]["total_soft_costs"],
+            total_development_cost=result["summary"]["total_development_cost"],
+            source=DataSource.COST_BREAKDOWN.value,
+        )
+
+        DDSessionStateManager.set_cost_data(cost_data)
+        st.success("✅ Cost data calculated and synced!")
+        st.info("💡 Data is now available in Loan Calculator and Financial Model tabs")
+
+    if "cost_breakdown_result" in st.session_state:
+        result = st.session_state["cost_breakdown_result"]
+        st.markdown("---")
+        st.header("📈 Results")
+
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric(
+                "Total Development Cost",
+                f"${result['summary']['total_development_cost']:,.0f}",
+            )
+        with col2:
+            st.metric(
+                "Hard Costs",
+                f"${result['summary']['total_hard_costs']:,.0f}",
+                f"{result['summary']['hard_cost_percentage']:.1f}%",
+            )
+        with col3:
+            st.metric(
+                "Soft Costs",
+                f"${result['summary']['total_soft_costs']:,.0f}",
+                f"{result['summary']['soft_cost_percentage']:.1f}%",
+            )
+        with col4:
+            st.metric(
+                "Cost per sqm (GFA)",
+                f"${result['summary']['cost_per_sqm_gfa']:,.0f}",
+            )
+
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("💵 Cost Distribution")
+            fig_pie = go.Figure(
+                data=[
+                    go.Pie(
+                        labels=["Hard Costs", "Soft Costs"],
+                        values=[
+                            result["summary"]["total_hard_costs"],
+                            result["summary"]["total_soft_costs"],
+                        ],
+                        hole=0.4,
+                        marker_colors=["#1f77b4", "#ff7f0e"],
+                    )
+                ]
+            )
+            fig_pie.update_layout(height=350)
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+        with col2:
+            st.subheader("🏗️ Hard Cost Breakdown")
+            hard = result["hard_costs"]["summary"]
+            fig_bar = go.Figure(
+                data=[
+                    go.Bar(
+                        x=["Land", "Construction", "Site Works", "Contingency"],
+                        y=[
+                            hard["total_land"],
+                            hard["total_construction"],
+                            hard["total_site_works"],
+                            hard["total_contingency"],
+                        ],
+                        marker_color=["#2ca02c", "#1f77b4", "#9467bd", "#d62728"],
+                    )
+                ]
+            )
+            fig_bar.update_layout(height=350, yaxis_title="Amount (AUD)")
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+        st.markdown("---")
+        with st.expander("📋 View Detailed Cost Table"):
+            cost_model = st.session_state.get("cost_model")
+            if cost_model:
+                rows = cost_model.generate_cost_summary_table()
+                df = pd.DataFrame(rows)
+                df["Amount"] = df["Amount"].apply(
+                    lambda x: f"${x:,.0f}"
+                    if isinstance(x, (int, float)) and x != ""
+                    else x
+                )
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+
+def render_loan_calculator_tab():
+    """渲染贷款计算器标签页 - 更新版"""
+    st.header("🏦 Dual-Phase Loan Calculator")
+    st.markdown(
+        "Calculate construction and investment loan requirements for your development"
+    )
+
+    DDSessionStateManager.initialize()
+    cost_data = DDSessionStateManager.get_cost_data()
+
+    if cost_data.total_development_cost == 0:
+        st.warning(
+            "⚠️ No cost data available. Please complete the **Cost Breakdown** tab first."
+        )
+
+        use_manual = st.checkbox("Or enter development cost manually")
+        if use_manual:
+            manual_cost = st.number_input(
+                "Total Development Cost ($)",
+                min_value=1_000_000.0,
+                max_value=100_000_000.0,
+                value=8_500_000.0,
+                step=100_000.0,
+            )
+            cost_data.total_development_cost = manual_cost
+        else:
+            return
+    else:
+        st.success(f"✅ Using cost data: ${cost_data.total_development_cost:,.0f}")
+        st.caption(f"Source: {cost_data.source}")
+
+    default_dev_cost = cost_data.total_development_cost
+
+    loan_tab1, loan_tab2, loan_tab3 = st.tabs(
+        ["📝 Parameters", "📊 Construction Loan", "🏠 Investment Loan"]
+    )
+
+    with loan_tab1:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("🏗️ Project Parameters")
+            total_dev_cost = st.number_input(
+                "Total Development Cost ($)",
+                min_value=1_000_000.0,
+                max_value=100_000_000.0,
+                value=default_dev_cost,
+                step=100_000.0,
+                help="From Cost Breakdown tab or enter manually",
+            )
+            completion_value = st.number_input(
+                "Expected Completion Value ($)",
+                min_value=1_000_000.0,
+                max_value=150_000_000.0,
+                value=total_dev_cost * 1.20,
+                step=100_000.0,
+                help="Expected market value on completion",
+            )
+            construction_months = st.slider(
+                "Construction Duration (months)",
+                min_value=6,
+                max_value=36,
+                value=14,
+            )
+            expected_noi = st.number_input(
+                "Expected Annual NOI ($)",
+                min_value=0.0,
+                max_value=10_000_000.0,
+                value=completion_value * 0.065,
+                step=10_000.0,
+                help="For DSCR calculation",
+            )
+
+        with col2:
+            st.subheader("🏦 Construction Loan")
+            const_ltc = st.slider(
+                "Loan-to-Cost (LTC) %",
+                min_value=50,
+                max_value=75,
+                value=65,
+                help=(
+                    f"Typical range: "
+                    f"{AU_LOAN_BENCHMARKS['construction']['ltc_min']}-"
+                    f"{AU_LOAN_BENCHMARKS['construction']['ltc_max']}%"
+                ),
+            )
+            const_rate = st.slider(
+                "Interest Rate (% p.a.)",
+                min_value=6.0,
+                max_value=12.0,
+                value=8.5,
+                step=0.25,
+            )
+            capitalize_interest = st.checkbox("Capitalize Interest", value=True)
+
+            st.markdown("---")
+            st.subheader("🏠 Investment Loan")
+            inv_lvr = st.slider(
+                "Loan-to-Value (LVR) %",
+                min_value=40,
+                max_value=70,
+                value=60,
+            )
+            inv_rate = st.slider(
+                "Interest Rate (% p.a.)",
+                min_value=5.0,
+                max_value=9.0,
+                value=6.75,
+                step=0.25,
+            )
+            inv_term = st.slider(
+                "Loan Term (years)", min_value=10, max_value=30, value=25
+            )
+            io_years = st.slider(
+                "Interest-Only Period (years)", min_value=0, max_value=10, value=5
+            )
+
+        st.markdown("---")
+        if st.button("🧮 Calculate & Sync", type="primary", use_container_width=True):
+            dual_loan = DualPhaseLoanModel(
+                total_development_cost=total_dev_cost,
+                completion_value=completion_value,
+                construction_duration_months=construction_months,
+                construction_ltc=const_ltc,
+                construction_rate=const_rate,
+                capitalize_interest=capitalize_interest,
+                investment_lvr=inv_lvr,
+                investment_rate=inv_rate,
+                investment_term_years=inv_term,
+                interest_only_years=io_years,
+                expected_annual_noi=expected_noi,
+            )
+            result = dual_loan.calculate_full_financing()
+            st.session_state["loan_result"] = result
+            st.session_state["dual_loan_model"] = dual_loan
+            financing_data = ProjectFinancingData(
+                construction_loan_amount=result["construction_phase"]["loan_parameters"][
+                    "loan_amount"
+                ],
+                construction_ltc_pct=const_ltc,
+                construction_interest_rate=const_rate,
+                construction_duration_months=construction_months,
+                construction_total_interest=result["construction_phase"]["interest"][
+                    "total_interest"
+                ],
+                construction_loan_at_completion=result["construction_phase"]["totals"][
+                    "total_loan_at_completion"
+                ],
+                completion_value=completion_value,
+                investment_loan_amount=result["investment_phase"]["loan_parameters"][
+                    "loan_amount"
+                ],
+                investment_lvr_pct=inv_lvr,
+                investment_interest_rate=inv_rate,
+                investment_term_years=inv_term,
+                interest_only_years=io_years,
+                monthly_io_payment=result["investment_phase"]["payments"][
+                    "monthly_io_payment"
+                ],
+                monthly_pi_payment=result["investment_phase"]["payments"][
+                    "monthly_pi_payment"
+                ],
+                total_equity_required=result["equity_analysis"]["total_equity_required"],
+                equity_percentage=result["equity_analysis"]["equity_pct_of_cost"],
+                expected_annual_noi=expected_noi,
+                dscr=result["debt_metrics"]["dscr"],
+                source=DataSource.LOAN_CALCULATOR.value,
+            )
+            DDSessionStateManager.set_financing_data(financing_data)
+            st.success("✅ Financing data calculated and synced!")
+
+    with loan_tab2:
+        st.subheader("📊 Construction Loan Analysis")
+        if "loan_result" not in st.session_state:
+            st.info("👆 Please calculate loans in the Parameters tab first")
+            return
+        result = st.session_state["loan_result"]
+        const = result["construction_phase"]
+
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric(
+                "Loan Amount",
+                f"${const['loan_parameters']['loan_amount']:,.0f}",
+            )
+        with col2:
+            st.metric(
+                "Total Interest",
+                f"${const['interest']['total_interest']:,.0f}",
+            )
+        with col3:
+            st.metric(
+                "Loan at Completion",
+                f"${const['totals']['total_loan_at_completion']:,.0f}",
+            )
+        with col4:
+            st.metric(
+                "Equity Required",
+                f"${const['totals']['equity_required']:,.0f}",
+            )
+
+        st.markdown("---")
+        st.subheader("📈 Draw Schedule & Interest")
+        schedule = const["draw_schedule"]
+        months = [item["month"] for item in schedule]
+        draws = [item["draw_amount"] for item in schedule]
+        cumulative = [item["cumulative_drawn"] for item in schedule]
+        interest = [item["cumulative_interest"] for item in schedule]
+
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        fig.add_trace(
+            go.Bar(x=months, y=draws, name="Monthly Draw", marker_color="#1f77b4"),
+            secondary_y=False,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=months,
+                y=cumulative,
+                name="Cumulative Draw",
+                line=dict(color="#2ca02c", width=3),
+            ),
+            secondary_y=False,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=months,
+                y=interest,
+                name="Cumulative Interest",
+                line=dict(color="#d62728", width=2, dash="dash"),
+            ),
+            secondary_y=True,
+        )
+        fig.update_layout(
+            height=400,
+            xaxis_title="Month",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        )
+        fig.update_yaxes(title_text="Draw Amount (AUD)", secondary_y=False)
+        fig.update_yaxes(title_text="Cumulative Interest (AUD)", secondary_y=True)
+        st.plotly_chart(fig, use_container_width=True)
+
+        with st.expander("📋 View Draw Schedule Table"):
+            df = pd.DataFrame(schedule)
+            df["draw_amount"] = df["draw_amount"].apply(lambda x: f"${x:,.0f}")
+            df["cumulative_drawn"] = df["cumulative_drawn"].apply(
+                lambda x: f"${x:,.0f}"
+            )
+            df["interest"] = df["interest"].apply(lambda x: f"${x:,.0f}")
+            df["cumulative_interest"] = df["cumulative_interest"].apply(
+                lambda x: f"${x:,.0f}"
+            )
+            df["total_outstanding"] = df["total_outstanding"].apply(
+                lambda x: f"${x:,.0f}"
+            )
+            df["draw_percentage"] = df["draw_percentage"].apply(lambda x: f"{x:.1f}%")
+            st.dataframe(df, use_container_width=True, hide_index=True)
+
+    with loan_tab3:
+        st.subheader("🏠 Investment Loan Analysis")
+        if "loan_result" not in st.session_state:
+            st.info("👆 Please calculate loans in the Parameters tab first")
+            return
+        result = st.session_state["loan_result"]
+        inv = result["investment_phase"]
+        refinance = result["refinance_analysis"]
+        equity = result["equity_analysis"]
+
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric(
+                "Loan Amount",
+                f"${inv['loan_parameters']['loan_amount']:,.0f}",
+            )
+        with col2:
+            st.metric(
+                "Monthly IO Payment",
+                f"${inv['payments']['monthly_io_payment']:,.0f}",
+            )
+        with col3:
+            st.metric(
+                "Monthly P&I Payment",
+                f"${inv['payments']['monthly_pi_payment']:,.0f}",
+            )
+        with col4:
+            dscr = result["debt_metrics"]["dscr"]
+            dscr_color = "normal" if dscr >= 1.25 else "inverse"
+            st.metric(
+                "DSCR",
+                f"{dscr:.2f}x",
+                "Adequate" if dscr >= 1.25 else "Below 1.25x",
+                delta_color=dscr_color,
+            )
+
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("🔄 Refinance Analysis")
+            st.write(
+                f"**Construction Loan Payoff:** "
+                f"${refinance['construction_loan_payoff']:,.0f}"
+            )
+            st.write(
+                f"**Investment Loan Amount:** "
+                f"${refinance['investment_loan_amount']:,.0f}"
+            )
+            if refinance["refinance_feasible"]:
+                st.success(
+                    f"✅ Refinance Feasible - Cash Out: "
+                    f"${refinance['equity_release']:,.0f}"
+                )
+            else:
+                st.error(
+                    f"❌ Additional Equity Required: "
+                    f"${refinance['additional_equity_required']:,.0f}"
+                )
+        with col2:
+            st.subheader("💰 Equity Summary")
+            st.write(
+                f"**Total Equity Required:** "
+                f"${equity['total_equity_required']:,.0f}"
+            )
+            st.write(f"**Equity % of Cost:** {equity['equity_pct_of_cost']:.1f}%")
+            st.write(
+                f"**Equity Release at Refinance:** "
+                f"${equity['equity_release_at_refinance']:,.0f}"
+            )
+            st.write(
+                f"**Net Equity Invested:** "
+                f"${equity['net_equity_invested']:,.0f}"
+            )
+
+        st.markdown("---")
+        st.subheader("📈 Development Margin")
+        project = result["project_summary"]
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Development Cost", f"${project['total_development_cost']:,.0f}")
+        with col2:
+            st.metric("Completion Value", f"${project['completion_value']:,.0f}")
+        with col3:
+            margin_color = "normal" if project["development_margin_pct"] >= 15 else "inverse"
+            st.metric(
+                "Development Margin",
+                f"${project['development_margin']:,.0f}",
+                f"{project['development_margin_pct']:.1f}%",
+                delta_color=margin_color,
+            )
 
 # ==================== 顶部：项目选择 ====================
 col1, col2 = st.columns([3, 1])
@@ -70,289 +973,34 @@ if st.session_state.selected_dd_project:
         st.stop()
     
     # 创建tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
-        f"📝 {t('dd.tabs.parameters')}",
-        f"📊 {t('dd.tabs.financial_model')}",
-        f"📈 {t('dd.tabs.scenarios')}",
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        "📋 Overview",
+        "⚡ Quick Setup",
+        "💵 Cost Breakdown",
+        "🏦 Loan Calculator",
+        "📊 Financial Model",
+        f"🎯 {t('dd.tabs.scenarios')}",
         f"📄 {t('dd.tabs.report')}"
     ])
     
-    # ===== Tab 1: Parameters =====
+    # ===== Tab 1: Project Overview =====
     with tab1:
-        st.markdown('<div class="bento-card" style="margin: 1rem 0;">', unsafe_allow_html=True)
-        st.subheader(f"{t('dd.tabs.parameters')}")
-        
-        with st.form("dd_parameters_form"):
-            # 基本信息
-            st.write(f"**{t('dd.parameters.basic_info')}**")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                name = st.text_input(f"{t('dd.parameters.project_name')}*", value=project.name)
-                location = st.text_input(t('dd.parameters.location'), value=project.location or "")
-                property_type = st.selectbox(
-                    t('dd.parameters.property_type'),
-                    [t('dd.property_types.industrial_warehouse'), t('dd.property_types.land_development'), t('dd.property_types.mixed_use'), t('dd.property_types.logistics_center')],
-                    index=0
-                )
-            
-            with col2:
-                status = st.selectbox(
-                    t('common.status'),
-                    [t('dd.status_options.under_review'), t('dd.status_options.approved'), t('dd.status_options.rejected'), t('dd.status_options.on_hold')],
-                    index=0
-                )
-                zoning = st.text_input(t('dd.parameters.zoning'), value=project.zoning or "")
-            
-            description = st.text_area(t('common.description'), value=project.description or "", height=80)
-            
-            st.write("---")
-            
-            # 土地和建筑
-            st.write(f"**{t('dd.parameters.land_building')}**")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                land_area = st.number_input(
-                    t('dd.parameters.land_area'),
-                    min_value=0.0,
-                    value=float(project.land_area_sqm or 0),
-                    step=100.0
-                )
-            
-            with col2:
-                building_area = st.number_input(
-                    t('dd.parameters.building_area'),
-                    min_value=0.0,
-                    value=float(project.building_area_sqm or 0),
-                    step=100.0
-                )
-            
-            st.write("---")
-            
-            # 收购成本
-            st.write(f"**{t('dd.parameters.acquisition')}**")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                purchase_price = st.number_input(
-                    f"{t('dd.parameters.purchase_price')} (AUD)",
-                    min_value=0.0,
-                    value=float(project.purchase_price or 0),
-                    step=100000.0,
-                    format="%.0f",
-                    help="Total land acquisition cost"
-                )
-            
-            with col2:
-                acquisition_costs = st.number_input(
-                    f"{t('dd.parameters.acquisition_costs')} (AUD)",
-                    min_value=0.0,
-                    value=float(project.acquisition_costs or 0),
-                    step=10000.0,
-                    format="%.0f",
-                    help="Legal fees, due diligence, stamp duty"
-                )
-            
-            st.write("---")
-            
-            # 开发成本
-            st.write(f"**{t('dd.parameters.development')}**")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                construction_cost = st.number_input(
-                    f"{t('dd.parameters.construction_cost')} (AUD)",
-                    min_value=0.0,
-                    value=float(project.construction_cost or 0),
-                    step=100000.0,
-                    format="%.0f"
-                )
-                
-                construction_duration = st.number_input(
-                    t('dd.parameters.construction_duration'),
-                    min_value=1,
-                    value=int(project.construction_duration_months or 12),
-                    step=1
-                )
-            
-            with col2:
-                contingency = st.number_input(
-                    t('dd.parameters.contingency'),
-                    min_value=0.0,
-                    max_value=30.0,
-                    value=float(project.contingency_percentage or 10),
-                    step=1.0,
-                    help="Construction cost buffer"
-                )
-            
-            st.write("---")
-            
-            # 融资结构
-            st.write(f"**{t('dd.parameters.financing')}**")
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                equity_pct = st.number_input(
-                    t('dd.parameters.equity'),
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=float(project.equity_percentage or 30),
-                    step=5.0
-                )
-            
-            with col2:
-                debt_pct = st.number_input(
-                    t('dd.parameters.debt'),
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=float(project.debt_percentage or 70),
-                    step=5.0,
-                    disabled=True,
-                    help="Auto-calculated: 100% - Equity"
-                )
-                # Auto calculate debt
-                debt_pct = 100 - equity_pct
-            
-            with col3:
-                interest_rate = st.number_input(
-                    t('dd.parameters.interest_rate'),
-                    min_value=0.0,
-                    max_value=20.0,
-                    value=float(project.interest_rate or 6.0),
-                    step=0.25
-                )
-            
-            loan_term = st.number_input(
-                t('dd.parameters.loan_term'),
-                min_value=1,
-                max_value=30,
-                value=int(project.loan_term_years or 25),
-                step=1
-            )
-            
-            st.write("---")
-            
-            # 收入假设
-            st.write(f"**{t('dd.parameters.revenue')}**")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                monthly_rent = st.number_input(
-                    f"{t('dd.parameters.monthly_rent')} (AUD)",
-                    min_value=0.0,
-                    value=float(project.estimated_monthly_rent or 0),
-                    step=5000.0,
-                    format="%.0f"
-                )
-                
-                rent_growth = st.number_input(
-                    t('dd.parameters.rent_growth'),
-                    min_value=0.0,
-                    max_value=20.0,
-                    value=float(project.rent_growth_rate or 3.0),
-                    step=0.5
-                )
-            
-            with col2:
-                occupancy = st.number_input(
-                    t('dd.parameters.occupancy_rate'),
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=float(project.occupancy_rate or 95.0),
-                    step=5.0
-                )
-                
-                opex_ratio = st.number_input(
-                    t('dd.parameters.opex_ratio'),
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=float(project.operating_expense_ratio or 30.0),
-                    step=5.0,
-                    help="% of gross revenue"
-                )
-            
-            st.write("---")
-            
-            # 退出策略
-            st.write(f"**{t('dd.parameters.exit_strategy')}**")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                holding_period = st.number_input(
-                    t('dd.parameters.holding_period'),
-                    min_value=1,
-                    max_value=30,
-                    value=int(project.holding_period_years or 10),
-                    step=1
-                )
-            
-            with col2:
-                exit_cap_rate = st.number_input(
-                    t('dd.parameters.exit_cap_rate'),
-                    min_value=0.0,
-                    max_value=20.0,
-                    value=float(project.exit_cap_rate or 6.5),
-                    step=0.25,
-                    help="Capitalization rate at sale"
-                )
-            
-            # 提交按钮
-            col1, col2 = st.columns(2)
-            with col1:
-                submitted = st.form_submit_button(f"💾 {t('dd.parameters.save_parameters')}", width='stretch')
-            with col2:
-                calculate = st.form_submit_button(f"🧮 {t('dd.parameters.calculate_returns')}", width='stretch', type="primary")
-            
-            if submitted or calculate:
-                # 验证
-                if not name:
-                    st.error(f"{t('dd.parameters.project_name')} {t('validation.required')}")
-                elif equity_pct + debt_pct != 100:
-                    st.error("Equity + Debt must equal 100%")
-                else:
-                    # 保存数据
-                    update_data = {
-                        'name': name,
-                        'description': description,
-                        'location': location,
-                        'property_type': property_type,
-                        'status': status,
-                        'land_area_sqm': land_area if land_area > 0 else None,
-                        'building_area_sqm': building_area if building_area > 0 else None,
-                        'zoning': zoning,
-                        'purchase_price': purchase_price,
-                        'acquisition_costs': acquisition_costs,
-                        'construction_cost': construction_cost,
-                        'construction_duration_months': construction_duration,
-                        'contingency_percentage': contingency,
-                        'equity_percentage': equity_pct,
-                        'debt_percentage': debt_pct,
-                        'interest_rate': interest_rate,
-                        'loan_term_years': loan_term,
-                        'estimated_monthly_rent': monthly_rent,
-                        'rent_growth_rate': rent_growth,
-                        'occupancy_rate': occupancy,
-                        'operating_expense_ratio': opex_ratio,
-                        'holding_period_years': holding_period,
-                        'exit_cap_rate': exit_cap_rate
-                    }
-                    
-                    try:
-                        db.update_dd_project(project.id, update_data)
-                        st.success(f"✅ {t('messages.save_success')}")
-                        
-                        if calculate:
-                            st.info("🧮 Financial calculations will be implemented in Day 8")
-                        
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"{t('messages.error_occurred')}: {e}")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # ===== Tab 2: Financial Model =====
+        render_project_overview_tab()
+
+    # ===== Tab 2: Quick Setup =====
     with tab2:
+        render_quick_setup_tab()
+
+    # ===== Tab 3: Cost Breakdown =====
+    with tab3:
+        render_cost_breakdown_tab()
+
+    # ===== Tab 4: Loan Calculator =====
+    with tab4:
+        render_loan_calculator_tab()
+
+    # ===== Tab 5: Financial Model =====
+    with tab5:
         st.markdown('<div class="bento-card" style="margin: 1rem 0;">', unsafe_allow_html=True)
         st.subheader("📊 Financial Model & Returns")
         
@@ -364,7 +1012,9 @@ if st.session_state.selected_dd_project:
         missing_params = [p for p in required_params if not project.__dict__.get(p)]
         
         if missing_params:
-            st.warning(f"⚠️ Please fill in required parameters in Tab 1: {', '.join(missing_params)}")
+            st.warning(
+                "⚠️ Please fill in required parameters in the Cost Breakdown or Loan Calculator tabs."
+            )
         else:
             # 导入财务模型
             from utils.financial_model import FinancialModel, format_currency, format_percentage
@@ -746,8 +1396,8 @@ if st.session_state.selected_dd_project:
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # ===== Tab 3: Scenarios =====
-    with tab3:
+    # ===== Tab 6: Scenarios =====
+    with tab6:
         st.markdown('<div class="bento-card" style="margin: 1rem 0;">', unsafe_allow_html=True)
         st.subheader("📈 Scenario & Sensitivity Analysis")
         
@@ -756,7 +1406,9 @@ if st.session_state.selected_dd_project:
         missing_params = [p for p in required_params if not project.__dict__.get(p)]
         
         if missing_params:
-            st.warning(f"⚠️ Please fill in required parameters in Tab 1")
+            st.warning(
+                "⚠️ Please fill in required parameters in the Cost Breakdown or Loan Calculator tabs."
+            )
         else:
             from utils.financial_model import FinancialModel, format_currency, format_percentage
             import plotly.graph_objects as go
@@ -1089,8 +1741,8 @@ if st.session_state.selected_dd_project:
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # ===== Tab 4: Report =====
-    with tab4:
+    # ===== Tab 7: Report =====
+    with tab7:
         st.markdown('<div class="bento-card" style="margin: 1rem 0;">', unsafe_allow_html=True)
         st.subheader("📄 Investment Decision Report")
         
@@ -1099,7 +1751,9 @@ if st.session_state.selected_dd_project:
         missing_params = [p for p in required_params if not project.__dict__.get(p)]
         
         if missing_params:
-            st.warning(f"⚠️ Please fill in required parameters in Tab 1 to generate report")
+            st.warning(
+                "⚠️ Please fill in required parameters in the Cost Breakdown or Loan Calculator tabs to generate report"
+            )
         else:
             from utils.financial_model import FinancialModel, format_currency, format_percentage
             from utils.dd_report_generator import DDReportGenerator
