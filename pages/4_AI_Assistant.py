@@ -11,6 +11,8 @@ import os
 from datetime import datetime
 from config.theme import generate_css
 from config.i18n import t, get_current_language
+import json
+from models.database import DatabaseManager
 
 # Page configuration
 st.set_page_config(
@@ -45,6 +47,94 @@ except Exception as e:
     st.error(f"❌ Error initializing AI Assistant: {e}")
     st.write("Please check your API key configuration.")
     st.stop()
+
+
+def build_dd_context(project_id):
+    db = DatabaseManager()
+    project = db.get_dd_project_by_id(project_id)
+    if not project:
+        return "No Due Diligence project found for the selected ID."
+
+    assumptions = {a.category: a.assumption_text for a in (project.assumptions or [])}
+
+    def load_json(text):
+        if not text:
+            return None
+        try:
+            return json.loads(text)
+        except Exception:
+            return None
+
+    cost = load_json(assumptions.get("cost_breakdown"))
+    loan = load_json(assumptions.get("loan_calculation"))
+    fm = load_json(assumptions.get("financial_model"))
+    scenarios = load_json(assumptions.get("scenarios"))
+
+    lines = [
+        f"DD Project: {project.name} (status: {project.status})",
+        f"Location: {project.location or 'N/A'} | Property: {project.property_type or 'N/A'}",
+    ]
+
+    if project.irr is not None or project.npv is not None:
+        lines.append(
+            "Key Metrics:"
+            f" IRR={project.irr if project.irr is not None else 'N/A'}"
+            f", NPV={project.npv if project.npv is not None else 'N/A'}"
+            f", Equity Multiple={project.equity_multiple if project.equity_multiple is not None else 'N/A'}"
+        )
+
+    if cost and isinstance(cost, dict):
+        summary = cost.get("summary", {})
+        lines.append(
+            "Cost Breakdown:"
+            f" Total Dev Cost={summary.get('total_development_cost')}"
+            f", Hard={summary.get('total_hard_costs')}"
+            f", Soft={summary.get('total_soft_costs')}"
+        )
+
+    if loan and isinstance(loan, dict):
+        const = loan.get("construction_phase", {}).get("loan_parameters", {})
+        inv = loan.get("investment_phase", {}).get("loan_parameters", {})
+        equity = loan.get("equity_analysis", {})
+        debt_metrics = loan.get("debt_metrics", {})
+        lines.append(
+            "Loan Summary:"
+            f" Construction Loan={const.get('loan_amount')}"
+            f", Investment Loan={inv.get('loan_amount')}"
+            f", Equity Required={equity.get('total_equity_required')}"
+            f", DSCR={debt_metrics.get('dscr')}"
+        )
+
+    if fm and isinstance(fm, dict):
+        lines.append(
+            "Financial Model:"
+            f" IRR={fm.get('irr')}"
+            f", NPV={fm.get('npv')}"
+            f", Equity Multiple={fm.get('equity_multiple')}"
+            f", CoC={fm.get('cash_on_cash_return')}"
+            f", Profit={fm.get('total_profit')}"
+        )
+
+    if scenarios and isinstance(scenarios, dict):
+        def scenario_line(key, label):
+            data = scenarios.get(key, {})
+            if not data:
+                return None
+            return (
+                f"{label}: IRR={data.get('irr')}, "
+                f"NPV={data.get('npv')}, EM={data.get('equity_multiple')}"
+            )
+
+        scenario_lines = [
+            scenario_line("base", "Base"),
+            scenario_line("optimistic", "Optimistic"),
+            scenario_line("pessimistic", "Pessimistic"),
+        ]
+        scenario_lines = [line for line in scenario_lines if line]
+        if scenario_lines:
+            lines.append("Scenarios: " + " | ".join(scenario_lines))
+
+    return "\n".join(lines)
 
 # Create tabs
 tab1, tab2 = st.tabs([f"💬 {t('ai.ask_questions')}", f"⚡ {t('ai.quick_analysis')}"])
@@ -85,7 +175,10 @@ with tab1:
             col1, col2 = st.columns([1, 1])
             with col1:
                 if st.button("Load DD Results", width="stretch"):
-                    st.session_state.dd_context = assistant.get_dd_context(selected_id)
+                    if hasattr(assistant, "get_dd_context"):
+                        st.session_state.dd_context = assistant.get_dd_context(selected_id)
+                    else:
+                        st.session_state.dd_context = build_dd_context(selected_id)
                     st.session_state.dd_project_id = selected_id
                     st.success("✅ DD results loaded")
             with col2:
