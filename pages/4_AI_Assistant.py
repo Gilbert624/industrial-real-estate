@@ -57,6 +57,49 @@ with tab1:
     # Chat history in session state
     if 'chat_history' not in st.session_state:
         st.session_state.chat_history = []
+
+    if 'dd_context' not in st.session_state:
+        st.session_state.dd_context = None
+    if 'dd_project_id' not in st.session_state:
+        st.session_state.dd_project_id = None
+
+    with st.expander("📌 Due Diligence Results"):
+        dd_projects = assistant.db.get_all_dd_projects()
+        if not dd_projects:
+            st.info("No Due Diligence projects found.")
+        else:
+            project_options = {f"{p.name} ({p.status})": p.id for p in dd_projects}
+            labels = list(project_options.keys())
+            default_index = 0
+            if st.session_state.dd_project_id in project_options.values():
+                default_index = list(project_options.values()).index(
+                    st.session_state.dd_project_id
+                )
+            selected_label = st.selectbox(
+                "Select DD Project",
+                options=labels,
+                index=default_index,
+            )
+            selected_id = project_options[selected_label]
+
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button("Load DD Results", width="stretch"):
+                    st.session_state.dd_context = assistant.get_dd_context(selected_id)
+                    st.session_state.dd_project_id = selected_id
+                    st.success("✅ DD results loaded")
+            with col2:
+                if st.button("Clear DD Results", width="stretch"):
+                    st.session_state.dd_context = None
+                    st.session_state.dd_project_id = None
+                    st.info("DD context cleared.")
+
+        if st.session_state.dd_context:
+            st.text_area(
+                "Loaded DD Context",
+                value=st.session_state.dd_context,
+                height=200,
+            )
     
     # Question input
     with st.form("question_form", clear_on_submit=True):
@@ -71,13 +114,23 @@ with tab1:
             submitted = st.form_submit_button(f"🚀 {t('ai.ask_claude')}", width='stretch')
         with col2:
             include_context = st.checkbox(t('ai.include_context'), value=True)
+            include_dd = st.checkbox(
+                "Include DD results",
+                value=bool(st.session_state.dd_context),
+                disabled=not bool(st.session_state.dd_context),
+            )
     
     # Process question
     if submitted and user_question:
         with st.spinner("🤔 Analyzing your data and thinking..."):
             try:
                 # Get answer
-                answer = assistant.query(user_question, include_context=include_context)
+                dd_context = st.session_state.dd_context if include_dd else None
+                answer = assistant.query(
+                    user_question,
+                    include_context=include_context,
+                    extra_context=dd_context,
+                )
                 
                 # Add to history
                 st.session_state.chat_history.append({

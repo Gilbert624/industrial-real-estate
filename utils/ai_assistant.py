@@ -6,6 +6,7 @@ Uses Claude API with intelligent caching and cost optimization
 import anthropic
 import os
 import hashlib
+import json
 from datetime import datetime
 from dotenv import load_dotenv
 from models.database import DatabaseManager
@@ -264,6 +265,93 @@ RECENT TRANSACTIONS:
             formatted += f"{month_data['month']}: Net ${month_data['net']:,.0f}\n"
         
         return formatted
+
+    def get_dd_context(self, project_id):
+        """Get Due Diligence context for a specific project."""
+        project = self.db.get_dd_project_by_id(project_id)
+        if not project:
+            return "No Due Diligence project found for the selected ID."
+
+        assumptions = {a.category: a.assumption_text for a in (project.assumptions or [])}
+
+        def load_json(text):
+            if not text:
+                return None
+            try:
+                return json.loads(text)
+            except Exception:
+                return None
+
+        cost = load_json(assumptions.get("cost_breakdown"))
+        loan = load_json(assumptions.get("loan_calculation"))
+        fm = load_json(assumptions.get("financial_model"))
+        scenarios = load_json(assumptions.get("scenarios"))
+
+        lines = [
+            f"DD Project: {project.name} (status: {project.status})",
+            f"Location: {project.location or 'N/A'} | Property: {project.property_type or 'N/A'}",
+        ]
+
+        if project.irr is not None or project.npv is not None:
+            lines.append(
+                "Key Metrics:"
+                f" IRR={project.irr if project.irr is not None else 'N/A'}"
+                f", NPV={project.npv if project.npv is not None else 'N/A'}"
+                f", Equity Multiple={project.equity_multiple if project.equity_multiple is not None else 'N/A'}"
+            )
+
+        if cost and isinstance(cost, dict):
+            summary = cost.get("summary", {})
+            lines.append(
+                "Cost Breakdown:"
+                f" Total Dev Cost={summary.get('total_development_cost')}"
+                f", Hard={summary.get('total_hard_costs')}"
+                f", Soft={summary.get('total_soft_costs')}"
+            )
+
+        if loan and isinstance(loan, dict):
+            const = loan.get("construction_phase", {}).get("loan_parameters", {})
+            inv = loan.get("investment_phase", {}).get("loan_parameters", {})
+            equity = loan.get("equity_analysis", {})
+            debt_metrics = loan.get("debt_metrics", {})
+            lines.append(
+                "Loan Summary:"
+                f" Construction Loan={const.get('loan_amount')}"
+                f", Investment Loan={inv.get('loan_amount')}"
+                f", Equity Required={equity.get('total_equity_required')}"
+                f", DSCR={debt_metrics.get('dscr')}"
+            )
+
+        if fm and isinstance(fm, dict):
+            lines.append(
+                "Financial Model:"
+                f" IRR={fm.get('irr')}"
+                f", NPV={fm.get('npv')}"
+                f", Equity Multiple={fm.get('equity_multiple')}"
+                f", CoC={fm.get('cash_on_cash_return')}"
+                f", Profit={fm.get('total_profit')}"
+            )
+
+        if scenarios and isinstance(scenarios, dict):
+            def scenario_line(key, label):
+                data = scenarios.get(key, {})
+                if not data:
+                    return None
+                return (
+                    f"{label}: IRR={data.get('irr')}, "
+                    f"NPV={data.get('npv')}, EM={data.get('equity_multiple')}"
+                )
+
+            scenario_lines = [
+                scenario_line("base", "Base"),
+                scenario_line("optimistic", "Optimistic"),
+                scenario_line("pessimistic", "Pessimistic"),
+            ]
+            scenario_lines = [line for line in scenario_lines if line]
+            if scenario_lines:
+                lines.append("Scenarios: " + " | ".join(scenario_lines))
+
+        return "\n".join(lines)
     
     def estimate_tokens(self, text):
         """Rough token estimation (1 token ≈ 4 characters)"""
@@ -276,7 +364,7 @@ RECENT TRANSACTIONS:
         output_cost = (output_tokens / 1000) * model_config['output_cost']
         return input_cost + output_cost
     
-    def query(self, user_question, include_context=True, force_model=None):
+    def query(self, user_question, include_context=True, force_model=None, extra_context=None):
         """
         Send query to Claude with optimizations
         
@@ -315,7 +403,11 @@ RECENT TRANSACTIONS:
             model_name = model_config['name']
             
             # System prompt (shorter for cost)
-            system_prompt = """You are a financial advisor for industrial real estate. Be concise and specific. Cite numbers from the data."""
+            system_prompt = (
+                "You are a financial advisor for industrial real estate. "
+                "Be concise and specific. Cite numbers from the data. "
+                "If Due Diligence results are provided, prioritize them."
+            )
             
             # P2: Build optimized user message
             if include_context:
@@ -330,9 +422,16 @@ RECENT TRANSACTIONS:
                     context = self.get_financial_context()
                     context_str = self.format_context_for_claude(context)
                 
+                if extra_context:
+                    context_str = f"{context_str}\n\nDue Diligence Results:\n{extra_context}"
                 user_message = f"Question: {user_question}\n\nData:\n{context_str}"
             else:
-                user_message = user_question
+                if extra_context:
+                    user_message = (
+                        f"Question: {user_question}\n\nDue Diligence Results:\n{extra_context}"
+                    )
+                else:
+                    user_message = user_question
             
             # Try primary model, fallback to secondary if 404
             response = None

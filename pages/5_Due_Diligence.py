@@ -1,9 +1,10 @@
 import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from models.database import DatabaseManager
+from models.database import DatabaseManager, DDAssumption, DDScenario, DDCashFlow
 from datetime import datetime
 import pandas as pd
+import json
 from config.theme import generate_css
 from utils.chart_styles import get_chart_layout, apply_professional_theme_to_figure, CHART_COLORS
 from config.i18n import t, get_current_language
@@ -46,38 +47,30 @@ def render_project_overview_tab():
     """渲染项目概览标签页 - 汇总显示"""
     st.header("📋 Project Overview")
 
-    # 初始化状态管理器
     DDSessionStateManager.initialize()
 
-    # 显示同步状态
     st.subheader("📊 Data Status")
     render_data_sync_status()
 
     st.markdown("---")
 
-    # 获取汇总数据
     summary = DDSessionStateManager.get_summary_for_display()
     cost = summary["cost"]
     financing = summary["financing"]
     metrics = summary["metrics"]
 
-    # 检查是否有数据
     has_cost_data = cost["total_development_cost"] > 0
     has_financing_data = financing["construction_loan"] > 0
     has_metrics_data = metrics["irr"] != 0
 
     if not has_cost_data:
         st.info("👉 Please start by entering cost details in the **Cost Breakdown** tab")
-
-        # 快速开始选项
         st.subheader("🚀 Quick Start")
-
         if st.button("Load Sunshine Coast Warehouse Example", type="primary"):
             from utils.development_costs import create_sunshine_coast_warehouse_example
 
             example = create_sunshine_coast_warehouse_example()
             result = example.calculate_total_development_cost()
-
             cost_data = ProjectCostData(
                 land_area_sqm=example.land_area_sqm,
                 land_price_per_sqm=example.land_price_per_sqm,
@@ -91,9 +84,7 @@ def render_project_overview_tab():
                     "base_construction_cost"
                 ],
                 total_site_works=result["hard_costs"]["site_works"]["total"],
-                total_contingency=result["hard_costs"]["contingency"][
-                    "total_contingency"
-                ],
+                total_contingency=result["hard_costs"]["contingency"]["total_contingency"],
                 total_professional_fees=result["soft_costs"]["professional_fees"]["total"],
                 total_government_charges=result["soft_costs"]["government_charges"][
                     "total"
@@ -105,63 +96,33 @@ def render_project_overview_tab():
             )
             DDSessionStateManager.set_cost_data(cost_data)
             st.rerun()
-
         return
 
-    # 显示汇总数据
     st.subheader("💰 Cost Summary")
-
     col1, col2, col3, col4 = st.columns(4)
-
     with col1:
-        st.metric(
-            "Total Development Cost",
-            f"${cost['total_development_cost']:,.0f}",
-        )
-
+        st.metric("Total Development Cost", f"${cost['total_development_cost']:,.0f}")
     with col2:
-        st.metric(
-            "Hard Costs",
-            f"${cost['total_hard_costs']:,.0f}",
-        )
-
+        st.metric("Hard Costs", f"${cost['total_hard_costs']:,.0f}")
     with col3:
-        st.metric(
-            "Soft Costs",
-            f"${cost['total_soft_costs']:,.0f}",
-        )
-
+        st.metric("Soft Costs", f"${cost['total_soft_costs']:,.0f}")
     with col4:
-        st.metric(
-            "Cost per sqm",
-            f"${cost['cost_per_sqm']:,.0f}",
-        )
+        st.metric("Cost per sqm", f"${cost['cost_per_sqm']:,.0f}")
 
     if has_financing_data:
         st.markdown("---")
         st.subheader("🏦 Financing Summary")
-
         col1, col2, col3, col4 = st.columns(4)
-
         with col1:
-            st.metric(
-                "Construction Loan",
-                f"${financing['construction_loan']:,.0f}",
-            )
-
+            st.metric("Construction Loan", f"${financing['construction_loan']:,.0f}")
         with col2:
-            st.metric(
-                "Investment Loan",
-                f"${financing['investment_loan']:,.0f}",
-            )
-
+            st.metric("Investment Loan", f"${financing['investment_loan']:,.0f}")
         with col3:
             st.metric(
                 "Total Equity",
                 f"${financing['total_equity']:,.0f}",
                 f"{financing['equity_pct']:.1f}%",
             )
-
         with col4:
             dscr_color = "normal" if financing["dscr"] >= 1.25 else "inverse"
             st.metric(
@@ -175,34 +136,16 @@ def render_project_overview_tab():
     if has_metrics_data:
         st.markdown("---")
         st.subheader("📈 Return Metrics")
-
         col1, col2, col3, col4 = st.columns(4)
-
         with col1:
             irr_color = "normal" if metrics["irr"] >= 15 else "inverse"
-            st.metric(
-                "IRR",
-                f"{metrics['irr']:.1f}%",
-                delta_color=irr_color,
-            )
-
+            st.metric("IRR", f"{metrics['irr']:.1f}%", delta_color=irr_color)
         with col2:
-            st.metric(
-                "NPV",
-                f"${metrics['npv']:,.0f}",
-            )
-
+            st.metric("NPV", f"${metrics['npv']:,.0f}")
         with col3:
-            st.metric(
-                "Equity Multiple",
-                f"{metrics['equity_multiple']:.2f}x",
-            )
-
+            st.metric("Equity Multiple", f"{metrics['equity_multiple']:.2f}x")
         with col4:
-            st.metric(
-                "Profit Margin",
-                f"{metrics['profit_margin']:.1f}%",
-            )
+            st.metric("Profit Margin", f"{metrics['profit_margin']:.1f}%")
     else:
         st.info("👉 Calculate returns in the **Financial Model** tab")
 
@@ -217,9 +160,124 @@ def render_project_overview_tab():
     )
 
     st.markdown("---")
+    if st.button("💾 Save All DD Results", type="primary"):
+        if not st.session_state.selected_dd_project:
+            st.warning("Please select a DD project first.")
+        else:
+            errors = []
+            try:
+                if "cost_breakdown_result" in st.session_state:
+                    upsert_dd_assumption(
+                        db,
+                        st.session_state.selected_dd_project,
+                        "cost_breakdown",
+                        st.session_state["cost_breakdown_result"],
+                    )
+                if "loan_result" in st.session_state:
+                    upsert_dd_assumption(
+                        db,
+                        st.session_state.selected_dd_project,
+                        "loan_calculation",
+                        st.session_state["loan_result"],
+                    )
+            except Exception as e:
+                errors.append(f"Cost/Loan save failed: {e}")
+
+            try:
+                from utils.financial_model import FinancialModel
+
+                cost_data = DDSessionStateManager.get_cost_data()
+                financing_data = DDSessionStateManager.get_financing_data()
+                if cost_data.total_development_cost > 0:
+                    model_params = build_financial_model_params(
+                        project, cost_data, financing_data
+                    )
+                    model = FinancialModel(model_params)
+                    returns = model.calculate_returns()
+                    cf_model = returns["cash_flow_model"]
+                    db.update_dd_project(
+                        st.session_state.selected_dd_project,
+                        {
+                            "irr": returns["irr"],
+                            "npv": returns["npv"],
+                            "equity_multiple": returns["equity_multiple"],
+                            "cash_on_cash_return": returns["cash_on_cash_return"],
+                        },
+                    )
+                    upsert_dd_assumption(
+                        db,
+                        st.session_state.selected_dd_project,
+                        "financial_model",
+                        returns,
+                    )
+                    replace_dd_cashflows(
+                        db,
+                        st.session_state.selected_dd_project,
+                        scenario_id=None,
+                        annual_cash_flows=cf_model["annual_cash_flows"],
+                    )
+            except Exception as e:
+                errors.append(f"Financial model save failed: {e}")
+
+            try:
+                if cost_data.total_development_cost > 0:
+                    from utils.financial_model import FinancialModel
+
+                    model_params = build_financial_model_params(
+                        project, cost_data, financing_data
+                    )
+                    model = FinancialModel(model_params)
+                    scenarios = model.calculate_three_scenarios()
+                    scenario_adjustments = {
+                        "base": {},
+                        "optimistic": {
+                            "construction_cost_adj": -10.0,
+                            "rent_adj": 20.0,
+                            "occupancy_adj": 3.0,
+                            "exit_cap_adj": -0.5,
+                        },
+                        "pessimistic": {
+                            "construction_cost_adj": 15.0,
+                            "rent_adj": -15.0,
+                            "occupancy_adj": -5.0,
+                            "exit_cap_adj": 1.0,
+                        },
+                    }
+                    for key, adjustments in scenario_adjustments.items():
+                        scenario = scenarios[key]
+                        row = upsert_dd_scenario(
+                            db,
+                            st.session_state.selected_dd_project,
+                            key,
+                            adjustments,
+                            scenario,
+                        )
+                        replace_dd_cashflows(
+                            db,
+                            st.session_state.selected_dd_project,
+                            scenario_id=row.id,
+                            annual_cash_flows=scenario["cash_flow_model"][
+                                "annual_cash_flows"
+                            ],
+                        )
+                    upsert_dd_assumption(
+                        db,
+                        st.session_state.selected_dd_project,
+                        "scenarios",
+                        scenarios,
+                    )
+            except Exception as e:
+                errors.append(f"Scenario save failed: {e}")
+
+            if errors:
+                for msg in errors:
+                    st.warning(msg)
+            else:
+                st.success("✅ All DD results saved to database.")
+
+    st.markdown("---")
     with st.expander("🔧 Debug: Session State Data"):
         col1, col2, col3 = st.columns(3)
-
         with col1:
             st.write("**Cost Data**")
             cost_data = DDSessionStateManager.get_cost_data()
@@ -232,7 +290,6 @@ def render_project_overview_tab():
                     "source": cost_data.source,
                 }
             )
-
         with col2:
             st.write("**Financing Data**")
             fin = DDSessionStateManager.get_financing_data()
@@ -245,12 +302,10 @@ def render_project_overview_tab():
                     "source": fin.source,
                 }
             )
-
         with col3:
             st.write("**Sync Status**")
             status = DDSessionStateManager.get_sync_status()
             st.json(status)
-
         if st.button("🔄 Reset All Data", type="secondary"):
             DDSessionStateManager.reset_all()
             st.rerun()
@@ -332,9 +387,7 @@ def render_cost_breakdown_tab():
 
     with col1:
         st.subheader("🏗️ Project Parameters")
-        project_name = st.text_input(
-            "Project Name", value="Industrial Warehouse Project"
-        )
+        project_name = st.text_input("Project Name", value="Industrial Warehouse Project")
         location = st.selectbox(
             "Location",
             options=["brisbane", "sunshine_coast", "moreton_bay"],
@@ -426,7 +479,6 @@ def render_cost_breakdown_tab():
 
     with col3:
         st.subheader("📋 Professional Fees")
-
         fee_input_mode = st.radio(
             "Input Mode",
             options=["Percentage of Construction", "Fixed Amount"],
@@ -479,39 +531,30 @@ def render_cost_breakdown_tab():
                 pm_pct = (pm_fee / base_construction) * 100
 
         total_professional_fees = (
-            architect_fee
-            + structural_fee
-            + civil_fee
-            + mep_fee
-            + qs_fee
-            + pm_fee
+            architect_fee + structural_fee + civil_fee + mep_fee + qs_fee + pm_fee
         )
         st.metric("Total Professional Fees", f"${total_professional_fees:,.0f}")
 
         st.markdown("---")
         st.subheader("⚠️ Contingency")
-
         contingency_mode = st.radio(
             "Input Mode",
             options=["Percentage", "Fixed Amount"],
             horizontal=True,
             key="contingency_input_mode",
         )
-
         base_for_contingency = (gfa * construction_rate) + site_works_total
 
         if contingency_mode == "Percentage":
             st.caption(
                 f"Base: ${base_for_contingency:,.0f} (Construction + Site Works)"
             )
-
             design_contingency_pct = st.slider(
                 "Design Contingency (%)", 0.0, 10.0, 5.0, 1.0
             )
             construction_contingency_pct = st.slider(
                 "Construction Contingency (%)", 0.0, 15.0, 5.0, 1.0
             )
-
             design_contingency = base_for_contingency * (design_contingency_pct / 100)
             construction_contingency = base_for_contingency * (
                 construction_contingency_pct / 100
@@ -582,6 +625,17 @@ def render_cost_breakdown_tab():
         st.session_state["cost_breakdown_result"] = result
         st.session_state["cost_model"] = cost_model
 
+        if st.session_state.selected_dd_project:
+            try:
+                upsert_dd_assumption(
+                    db,
+                    st.session_state.selected_dd_project,
+                    "cost_breakdown",
+                    result,
+                )
+            except Exception as e:
+                st.warning(f"⚠️ Failed to store cost breakdown: {e}")
+
         cost_data = ProjectCostData(
             land_area_sqm=land_area,
             land_price_per_sqm=land_price,
@@ -642,7 +696,9 @@ def render_cost_breakdown_tab():
                     "contingency_percentage": contingency_pct,
                 }
                 try:
-                    db.update_dd_project(st.session_state.selected_dd_project, update_data)
+                    db.update_dd_project(
+                        st.session_state.selected_dd_project, update_data
+                    )
                     st.success("✅ Saved cost data to project.")
                 except Exception as e:
                     st.error(f"❌ Failed to save cost data: {e}")
@@ -944,6 +1000,16 @@ def render_loan_calculator_tab():
                 source=DataSource.LOAN_CALCULATOR.value,
             )
             DDSessionStateManager.set_financing_data(financing_data)
+            if st.session_state.selected_dd_project:
+                try:
+                    upsert_dd_assumption(
+                        db,
+                        st.session_state.selected_dd_project,
+                        "loan_calculation",
+                        result,
+                    )
+                except Exception as e:
+                    st.warning(f"⚠️ Failed to store loan calculation: {e}")
             st.success("✅ Financing data calculated and synced!")
 
             if st.button("💾 Save to Project", type="secondary", key="save_loan_to_project"):
@@ -1194,6 +1260,107 @@ def build_financial_model_params(project, cost_data, financing_data):
     }
 
 
+def upsert_dd_assumption(db, project_id, category, payload, source="ui", confidence="High"):
+    """Upsert assumption JSON payload for a DD project."""
+    session = db.get_session()
+    try:
+        row = (
+            session.query(DDAssumption)
+            .filter(
+                DDAssumption.project_id == project_id,
+                DDAssumption.category == category,
+            )
+            .first()
+        )
+        if row is None:
+            row = DDAssumption(project_id=project_id, category=category)
+        row.assumption_text = json.dumps(payload, default=str)
+        row.source = source
+        row.confidence_level = confidence
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def upsert_dd_scenario(db, project_id, name, adjustments, results):
+    """Upsert scenario results for a DD project."""
+    session = db.get_session()
+    try:
+        row = (
+            session.query(DDScenario)
+            .filter(
+                DDScenario.project_id == project_id,
+                DDScenario.scenario_name == name,
+            )
+            .first()
+        )
+        if row is None:
+            row = DDScenario(project_id=project_id, scenario_name=name)
+
+        row.purchase_price_adjustment = adjustments.get("purchase_price_adj", 0.0)
+        row.construction_cost_adjustment = adjustments.get("construction_cost_adj", 0.0)
+        row.rent_adjustment = adjustments.get("rent_adj", 0.0)
+        row.occupancy_adjustment = adjustments.get("occupancy_adj", 0.0)
+        row.exit_cap_adjustment = adjustments.get("exit_cap_adj", 0.0)
+
+        row.irr = results.get("irr")
+        row.npv = results.get("npv")
+        row.equity_multiple = results.get("equity_multiple")
+
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def replace_dd_cashflows(db, project_id, scenario_id, annual_cash_flows):
+    """Replace cached annual cashflows for a DD project/scenario."""
+    session = db.get_session()
+    try:
+        (
+            session.query(DDCashFlow)
+            .filter(
+                DDCashFlow.project_id == project_id,
+                DDCashFlow.scenario_id == scenario_id,
+            )
+            .delete()
+        )
+        for cf in annual_cash_flows:
+            row = DDCashFlow(
+                project_id=project_id,
+                scenario_id=scenario_id,
+                period=cf.get("year", 0),
+                period_type="annual",
+                gross_rental_income=0.0,
+                vacancy_loss=0.0,
+                effective_gross_income=0.0,
+                operating_expenses=0.0,
+                net_operating_income=cf.get("noi", 0.0),
+                capital_expenditure=0.0,
+                debt_service=cf.get("debt_service", 0.0),
+                cash_flow_before_tax=cf.get("cash_flow", 0.0),
+                cumulative_cash_flow=cf.get("cumulative_cash_flow", 0.0),
+            )
+            session.add(row)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
 def is_financial_model_ready() -> bool:
     """Guard for older deployments missing DDSessionStateManager helpers."""
     checker = getattr(DDSessionStateManager, "is_ready_for_financial_model", None)
@@ -1245,7 +1412,6 @@ def render_financial_model_tab():
     st.markdown('<div class="bento-card" style="margin: 1rem 0;">', unsafe_allow_html=True)
     st.subheader("📊 Financial Model & Returns")
 
-    # 导入财务模型
     from utils.financial_model import FinancialModel, format_currency, format_percentage
 
     st.markdown("### 🧾 Assumptions")
@@ -1312,8 +1478,6 @@ def render_financial_model_tab():
             "exit_cap_rate": exit_cap_rate,
         }
     )
-
-    # 创建模型并计算
     try:
         model = FinancialModel(model_params)
         returns = model.calculate_returns()
@@ -1325,19 +1489,42 @@ def render_financial_model_tab():
         ]
         annual_noi_stabilized = operating_noi[-1] if operating_noi else 0
 
-        # ========== 顶部：关键指标卡片 ==========
+        if st.session_state.selected_dd_project:
+            try:
+                db.update_dd_project(
+                    st.session_state.selected_dd_project,
+                    {
+                        "irr": returns["irr"],
+                        "npv": returns["npv"],
+                        "equity_multiple": returns["equity_multiple"],
+                        "cash_on_cash_return": returns["cash_on_cash_return"],
+                    },
+                )
+                upsert_dd_assumption(
+                    db,
+                    st.session_state.selected_dd_project,
+                    "financial_model",
+                    returns,
+                )
+                replace_dd_cashflows(
+                    db,
+                    st.session_state.selected_dd_project,
+                    scenario_id=None,
+                    annual_cash_flows=cf_model["annual_cash_flows"],
+                )
+            except Exception as e:
+                st.warning(f"⚠️ Failed to store financial model results: {e}")
+
         st.write("### 🎯 Key Investment Metrics")
-
         col1, col2, col3, col4 = st.columns(4)
-
         with col1:
             irr_color = "normal" if returns["irr"] and returns["irr"] > 15 else "inverse"
             st.metric(
                 "IRR",
                 format_percentage(returns["irr"]),
                 help="Internal Rate of Return - Target: >15%",
+                delta_color=irr_color,
             )
-
         with col2:
             st.metric(
                 "Equity Multiple",
@@ -1346,14 +1533,12 @@ def render_financial_model_tab():
                 else "N/A",
                 help="Total return / Initial equity - Target: >2.0x",
             )
-
         with col3:
             st.metric(
                 "NPV",
                 format_currency(returns["npv"]),
                 help="Net Present Value at 12% discount rate",
             )
-
         with col4:
             dscr_color = (
                 "normal"
@@ -1364,16 +1549,13 @@ def render_financial_model_tab():
                 "Avg DSCR",
                 f"{returns['avg_dscr']:.2f}x" if returns["avg_dscr"] else "N/A",
                 help="Debt Service Coverage Ratio - Min: 1.25x",
+                delta_color=dscr_color,
             )
 
         st.write("---")
-
-        # ========== 投资摘要 ==========
         col1, col2 = st.columns(2)
-
         with col1:
             st.write("### 💰 Investment Summary")
-
             summary_data = {
                 "Total Development Cost": format_currency(
                     cf_model["development_costs"]["total_development_cost"]
@@ -1387,13 +1569,11 @@ def render_financial_model_tab():
                     cf_model["total_loan_at_completion"]
                 ),
             }
-
             for label, value in summary_data.items():
                 st.write(f"**{label}:** {value}")
 
         with col2:
             st.write("### 📈 Returns Summary")
-
             returns_data = {
                 "Cash-on-Cash (Year 1)": format_percentage(
                     returns["cash_on_cash_return"]
@@ -1403,20 +1583,14 @@ def render_financial_model_tab():
                 "Annual NOI (Stabilized)": format_currency(annual_noi_stabilized),
                 "Exit Value": format_currency(returns["cash_flow_model"]["exit_value"]),
             }
-
             for label, value in returns_data.items():
                 st.write(f"**{label}:** {value}")
 
         st.write("---")
-
-        # ========== Year by Year Cash Flow ==========
         st.write("### 📊 Cash Flow Timeline")
-
-        # Create cash flow chart
         cash_flow_rows = returns["cash_flow_model"]["annual_cash_flows"]
         years = [row.get("year", idx) for idx, row in enumerate(cash_flow_rows)]
         cash_flows = [row.get("cash_flow", 0) for row in cash_flow_rows]
-
         fig = go.Figure()
         fig.add_trace(
             go.Bar(
@@ -1428,19 +1602,15 @@ def render_financial_model_tab():
                 ],
             )
         )
-
         fig.update_layout(
             title="Annual Cash Flow",
             xaxis_title="Year",
             yaxis_title="Cash Flow (AUD)",
             height=400,
         )
-
         st.plotly_chart(fig, use_container_width=True)
 
         st.write("---")
-
-        # ========== Detailed Metrics ==========
         with st.expander("📋 View Detailed Metrics"):
             metrics_data = {
                 "IRR": format_percentage(returns["irr"]),
@@ -1463,13 +1633,11 @@ def render_financial_model_tab():
                 if returns["avg_dscr"]
                 else "N/A",
             }
-
             df = pd.DataFrame(
                 [{"Metric": k, "Value": v} for k, v in metrics_data.items()]
             )
             st.dataframe(df, use_container_width=True, hide_index=True)
 
-        # ========== Save ==========
         st.write("---")
         if st.button("💾 Save Calculated Metrics to Project", width="stretch"):
             update_data = {
@@ -1478,18 +1646,17 @@ def render_financial_model_tab():
                 "equity_multiple": returns["equity_multiple"],
                 "cash_on_cash_return": returns["cash_on_cash_return"],
             }
-
             db.update_dd_project(project.id, update_data)
             st.success("✅ Metrics saved to project!")
             st.rerun()
-
     except Exception as e:
         st.error(f"❌ Error calculating financial model: {e}")
         import traceback
+
         with st.expander("🔍 Error Details"):
             st.code(traceback.format_exc())
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # ==================== 顶部：项目选择 ====================
 col1, col2 = st.columns([3, 1])
@@ -1519,7 +1686,11 @@ with col1:
         st.session_state.selected_dd_project = None
 
 with col2:
-    if st.button(f"🗑️ {t('dd.delete_project')}", width='stretch', disabled=not st.session_state.selected_dd_project):
+    if st.button(
+        f"🗑️ {t('dd.delete_project')}",
+        width="stretch",
+        disabled=not st.session_state.selected_dd_project,
+    ):
         if st.session_state.selected_dd_project:
             db.delete_dd_project(st.session_state.selected_dd_project)
             st.session_state.selected_dd_project = None
@@ -1527,7 +1698,7 @@ with col2:
             st.rerun()
 
 st.write("---")
-
+                
 # ==================== 主要内容：Tab布局 ====================
 if st.session_state.selected_dd_project:
     # 编辑现有项目
@@ -1580,7 +1751,7 @@ if st.session_state.selected_dd_project:
         else:
             from utils.financial_model import FinancialModel, format_currency, format_percentage
             import plotly.graph_objects as go
-
+            
             st.markdown("### 🧾 Assumptions")
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -1654,6 +1825,49 @@ if st.session_state.selected_dd_project:
                 
                 with st.spinner("Calculating scenarios..."):
                     scenarios = model.calculate_three_scenarios()
+
+                if st.session_state.selected_dd_project:
+                    scenario_adjustments = {
+                        "base": {},
+                        "optimistic": {
+                            "construction_cost_adj": -10.0,
+                            "rent_adj": 20.0,
+                            "occupancy_adj": 3.0,
+                            "exit_cap_adj": -0.5,
+                        },
+                        "pessimistic": {
+                            "construction_cost_adj": 15.0,
+                            "rent_adj": -15.0,
+                            "occupancy_adj": -5.0,
+                            "exit_cap_adj": 1.0,
+                        },
+                    }
+                    try:
+                        for key, adjustments in scenario_adjustments.items():
+                            scenario = scenarios[key]
+                            row = upsert_dd_scenario(
+                                db,
+                                st.session_state.selected_dd_project,
+                                key,
+                                adjustments,
+                                scenario,
+                            )
+                            replace_dd_cashflows(
+                                db,
+                                st.session_state.selected_dd_project,
+                                scenario_id=row.id,
+                                annual_cash_flows=scenario["cash_flow_model"][
+                                    "annual_cash_flows"
+                                ],
+                            )
+                        upsert_dd_assumption(
+                            db,
+                            st.session_state.selected_dd_project,
+                            "scenarios",
+                            scenarios,
+                        )
+                    except Exception as e:
+                        st.warning(f"⚠️ Failed to store scenarios: {e}")
                 
                 # 情景对比表
                 col1, col2, col3 = st.columns(3)
@@ -1969,7 +2183,7 @@ if st.session_state.selected_dd_project:
         else:
             from utils.financial_model import FinancialModel, format_currency, format_percentage
             from utils.dd_report_generator import DDReportGenerator
-
+            
             st.markdown("### 🧾 Report Assumptions")
             col1, col2, col3 = st.columns(3)
             with col1:
