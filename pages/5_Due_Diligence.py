@@ -1194,6 +1194,15 @@ def build_financial_model_params(project, cost_data, financing_data):
     }
 
 
+def is_financial_model_ready() -> bool:
+    """Guard for older deployments missing DDSessionStateManager helpers."""
+    checker = getattr(DDSessionStateManager, "is_ready_for_financial_model", None)
+    if callable(checker):
+        return checker()
+    cost = DDSessionStateManager.get_cost_data()
+    return cost.total_development_cost > 0
+
+
 def render_financial_model_tab():
     """渲染财务模型标签页"""
     st.header("📊 Financial Model")
@@ -1202,7 +1211,7 @@ def render_financial_model_tab():
     cost_data = DDSessionStateManager.get_cost_data()
     financing_data = DDSessionStateManager.get_financing_data()
 
-    if cost_data.total_development_cost <= 0:
+    if not is_financial_model_ready():
         st.warning("⚠️ Please complete the **Cost Breakdown** tab first.")
         st.info("Required: Total Development Cost > 0")
 
@@ -1566,7 +1575,7 @@ if st.session_state.selected_dd_project:
         
         cost_data = DDSessionStateManager.get_cost_data()
         financing_data = DDSessionStateManager.get_financing_data()
-        if not DDSessionStateManager.is_ready_for_financial_model():
+        if not is_financial_model_ready():
             st.warning("⚠️ Please complete the Cost Breakdown tab first.")
         else:
             from utils.financial_model import FinancialModel, format_currency, format_percentage
@@ -1953,7 +1962,7 @@ if st.session_state.selected_dd_project:
         
         cost_data = DDSessionStateManager.get_cost_data()
         financing_data = DDSessionStateManager.get_financing_data()
-        if not DDSessionStateManager.is_ready_for_financial_model():
+        if not is_financial_model_ready():
             st.warning(
                 "⚠️ Please complete the Cost Breakdown tab first to generate report"
             )
