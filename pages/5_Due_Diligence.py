@@ -566,8 +566,8 @@ def render_cost_breakdown_tab():
             gross_floor_area=gfa,
             construction_rate_per_sqm=construction_rate,
             site_works=site_works_obj,
-            design_contingency_pct=design_contingency,
-            construction_contingency_pct=construction_contingency,
+            design_contingency_pct=design_contingency_pct,
+            construction_contingency_pct=construction_contingency_pct,
             architect_pct=architect_pct,
             structural_engineer_pct=structural_pct,
             civil_engineer_pct=civil_pct,
@@ -649,6 +649,25 @@ def render_cost_breakdown_tab():
 
     if "cost_breakdown_result" in st.session_state:
         result = st.session_state["cost_breakdown_result"]
+        total_dev_cost = result["summary"]["total_development_cost"]
+        if total_dev_cost > 1_000_000_000:
+            st.error(
+                f"⚠️ Calculation error detected: "
+                f"${total_dev_cost:,.0f} seems too high. Please check inputs."
+            )
+            with st.expander("🔍 Debug: Check Input Values"):
+                st.write(f"GFA: {gfa} sqm")
+                st.write(f"Construction Rate: ${construction_rate}/sqm")
+                st.write(f"Base Construction: ${gfa * construction_rate:,.0f}")
+                st.write(f"Land Area: {land_area} sqm")
+                st.write(f"Land Price: ${land_price}/sqm")
+                st.write(f"Land Cost: ${land_area * land_price:,.0f}")
+            return
+        with st.expander("🔍 Debug: Calculation Summary"):
+            st.write("DEBUG - Result from calculation:")
+            st.write(f"Hard: {result['summary']['total_hard_costs']}")
+            st.write(f"Soft: {result['summary']['total_soft_costs']}")
+            st.write(f"Total: {result['summary']['total_development_cost']}")
         st.markdown("---")
         st.header("📈 Results")
 
@@ -780,11 +799,13 @@ def render_loan_calculator_tab():
                 step=100_000.0,
                 help="From Cost Breakdown tab or enter manually",
             )
+            max_completion_value = 10_000_000_000.0
+            default_completion_value = total_dev_cost * 1.20
             completion_value = st.number_input(
                 "Expected Completion Value ($)",
-                min_value=1_000_000.0,
-                max_value=150_000_000.0,
-                value=total_dev_cost * 1.20,
+                min_value=0.0,
+                max_value=max_completion_value,
+                value=min(default_completion_value, max_completion_value),
                 step=100_000.0,
                 help="Expected market value on completion",
             )
@@ -797,7 +818,7 @@ def render_loan_calculator_tab():
             expected_noi = st.number_input(
                 "Expected Annual NOI ($)",
                 min_value=0.0,
-                max_value=10_000_000.0,
+                max_value=100_000_000_000.0,
                 value=completion_value * 0.065,
                 step=10_000.0,
                 help="For DSCR calculation",
@@ -1122,6 +1143,57 @@ def render_loan_calculator_tab():
             )
 
 
+def build_financial_model_params(project, cost_data, financing_data):
+    """Build FinancialModel parameters from session state with fallbacks."""
+    base_construction = cost_data.base_construction_cost
+    base_for_contingency = base_construction + cost_data.total_site_works
+    contingency_pct = (
+        (cost_data.total_contingency / base_for_contingency) * 100
+        if base_for_contingency > 0
+        else (project.contingency_percentage or 10.0)
+    )
+
+    equity_pct = financing_data.equity_percentage or (project.equity_percentage or 30.0)
+    debt_pct = 100 - equity_pct
+
+    annual_noi = financing_data.expected_annual_noi or 0.0
+    monthly_rent = project.estimated_monthly_rent or (
+        annual_noi / 12 if annual_noi > 0 else 0
+    )
+
+    return {
+        "purchase_price": cost_data.land_purchase_price or project.purchase_price or 0,
+        "acquisition_costs": cost_data.land_acquisition_costs
+        or project.acquisition_costs
+        or 0,
+        "construction_cost": (
+            cost_data.base_construction_cost
+            + cost_data.total_site_works
+            + cost_data.total_contingency
+            if cost_data.base_construction_cost > 0
+            else (project.construction_cost or 0)
+        ),
+        "construction_duration_months": financing_data.construction_duration_months
+        or project.construction_duration_months
+        or 12,
+        "contingency_percentage": contingency_pct,
+        "equity_percentage": equity_pct,
+        "debt_percentage": debt_pct,
+        "interest_rate": financing_data.construction_interest_rate
+        or project.interest_rate
+        or 6.0,
+        "loan_term_years": financing_data.investment_term_years
+        or project.loan_term_years
+        or 25,
+        "estimated_monthly_rent": monthly_rent,
+        "rent_growth_rate": project.rent_growth_rate or 3.0,
+        "occupancy_rate": project.occupancy_rate or 95.0,
+        "operating_expense_ratio": project.operating_expense_ratio or 30.0,
+        "holding_period_years": project.holding_period_years or 10,
+        "exit_cap_rate": project.exit_cap_rate or 6.5,
+    }
+
+
 def render_financial_model_tab():
     """渲染财务模型标签页"""
     st.header("📊 Financial Model")
@@ -1167,30 +1239,82 @@ def render_financial_model_tab():
     # 导入财务模型
     from utils.financial_model import FinancialModel, format_currency, format_percentage
 
-    # 准备参数
-    model_params = {
-        "purchase_price": project.purchase_price or 0,
-        "acquisition_costs": project.acquisition_costs or 0,
-        "construction_cost": project.construction_cost or 0,
-        "construction_duration_months": project.construction_duration_months or 12,
-        "contingency_percentage": project.contingency_percentage or 10.0,
-        "equity_percentage": project.equity_percentage or 30.0,
-        "debt_percentage": project.debt_percentage or 70.0,
-        "interest_rate": project.interest_rate or 6.0,
-        "loan_term_years": project.loan_term_years or 25,
-        "estimated_monthly_rent": project.estimated_monthly_rent or 0,
-        "rent_growth_rate": project.rent_growth_rate or 3.0,
-        "occupancy_rate": project.occupancy_rate or 95.0,
-        "operating_expense_ratio": project.operating_expense_ratio or 30.0,
-        "holding_period_years": project.holding_period_years or 10,
-        "exit_cap_rate": project.exit_cap_rate or 6.5,
-    }
+    st.markdown("### 🧾 Assumptions")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        monthly_rent = st.number_input(
+            "Monthly Rent (AUD)",
+            min_value=0.0,
+            value=float(project.estimated_monthly_rent or 0),
+            step=5000.0,
+            key="fm_monthly_rent",
+        )
+        occupancy = st.number_input(
+            "Occupancy Rate (%)",
+            min_value=0.0,
+            max_value=100.0,
+            value=float(project.occupancy_rate or 95.0),
+            step=1.0,
+            key="fm_occupancy",
+        )
+    with col2:
+        rent_growth = st.number_input(
+            "Rent Growth (%)",
+            min_value=0.0,
+            max_value=20.0,
+            value=float(project.rent_growth_rate or 3.0),
+            step=0.5,
+            key="fm_rent_growth",
+        )
+        opex_ratio = st.number_input(
+            "Opex Ratio (%)",
+            min_value=0.0,
+            max_value=100.0,
+            value=float(project.operating_expense_ratio or 30.0),
+            step=5.0,
+            key="fm_opex",
+        )
+    with col3:
+        holding_period = st.number_input(
+            "Holding Period (years)",
+            min_value=1,
+            max_value=30,
+            value=int(project.holding_period_years or 10),
+            step=1,
+            key="fm_holding",
+        )
+        exit_cap_rate = st.number_input(
+            "Exit Cap Rate (%)",
+            min_value=0.0,
+            max_value=20.0,
+            value=float(project.exit_cap_rate or 6.5),
+            step=0.25,
+            key="fm_exit_cap",
+        )
+
+    model_params = build_financial_model_params(project, cost_data, financing_data)
+    model_params.update(
+        {
+            "estimated_monthly_rent": monthly_rent,
+            "rent_growth_rate": rent_growth,
+            "occupancy_rate": occupancy,
+            "operating_expense_ratio": opex_ratio,
+            "holding_period_years": holding_period,
+            "exit_cap_rate": exit_cap_rate,
+        }
+    )
 
     # 创建模型并计算
     try:
         model = FinancialModel(model_params)
         returns = model.calculate_returns()
         cf_model = returns["cash_flow_model"]
+        operating_noi = [
+            cf["noi"]
+            for cf in cf_model["annual_cash_flows"]
+            if cf.get("period") == "Operating"
+        ]
+        annual_noi_stabilized = operating_noi[-1] if operating_noi else 0
 
         # ========== 顶部：关键指标卡片 ==========
         st.write("### 🎯 Key Investment Metrics")
@@ -1266,11 +1390,9 @@ def render_financial_model_tab():
                     returns["cash_on_cash_return"]
                 ),
                 "Profit Margin": format_percentage(returns["profit_margin"]),
-                "Total Return": format_currency(returns["total_return"]),
-                "Annual NOI (Stabilized)": format_currency(
-                    returns["annual_noi_stabilized"]
-                ),
-                "Exit Value": format_currency(returns["exit_value"]),
+                "Total Return": format_currency(returns["total_profit"]),
+                "Annual NOI (Stabilized)": format_currency(annual_noi_stabilized),
+                "Exit Value": format_currency(returns["cash_flow_model"]["exit_value"]),
             }
 
             for label, value in returns_data.items():
@@ -1282,8 +1404,9 @@ def render_financial_model_tab():
         st.write("### 📊 Cash Flow Timeline")
 
         # Create cash flow chart
-        years = list(range(len(returns["annual_cash_flows"])))
-        cash_flows = returns["annual_cash_flows"]
+        cash_flow_rows = returns["cash_flow_model"]["annual_cash_flows"]
+        years = [row.get("year", idx) for idx, row in enumerate(cash_flow_rows)]
+        cash_flows = [row.get("cash_flow", 0) for row in cash_flow_rows]
 
         fig = go.Figure()
         fig.add_trace(
@@ -1318,15 +1441,15 @@ def render_financial_model_tab():
                     returns["cash_on_cash_return"]
                 ),
                 "Profit Margin": format_percentage(returns["profit_margin"]),
-                "Total Return": format_currency(returns["total_return"]),
+                "Total Return": format_currency(returns["total_profit"]),
                 "Total Equity Invested": format_currency(
                     returns["total_equity_invested"]
                 ),
-                "Debt Amount": format_currency(returns["debt_amount"]),
-                "Exit Value": format_currency(returns["exit_value"]),
-                "Annual NOI (Stabilized)": format_currency(
-                    returns["annual_noi_stabilized"]
+                "Debt Amount": format_currency(
+                    returns["cash_flow_model"]["financing"]["debt_amount"]
                 ),
+                "Exit Value": format_currency(returns["cash_flow_model"]["exit_value"]),
+                "Annual NOI (Stabilized)": format_currency(annual_noi_stabilized),
                 "Average DSCR": f"{returns['avg_dscr']:.2f}x"
                 if returns["avg_dscr"]
                 else "N/A",
@@ -1441,36 +1564,78 @@ if st.session_state.selected_dd_project:
         st.markdown('<div class="bento-card" style="margin: 1rem 0;">', unsafe_allow_html=True)
         st.subheader("📈 Scenario & Sensitivity Analysis")
         
-        # 检查参数
-        required_params = ['purchase_price', 'construction_cost', 'estimated_monthly_rent']
-        missing_params = [p for p in required_params if not project.__dict__.get(p)]
-        
-        if missing_params:
-            st.warning(
-                "⚠️ Please fill in required parameters in the Cost Breakdown or Loan Calculator tabs."
-            )
+        cost_data = DDSessionStateManager.get_cost_data()
+        financing_data = DDSessionStateManager.get_financing_data()
+        if not DDSessionStateManager.is_ready_for_financial_model():
+            st.warning("⚠️ Please complete the Cost Breakdown tab first.")
         else:
             from utils.financial_model import FinancialModel, format_currency, format_percentage
             import plotly.graph_objects as go
-            
-            # 准备参数
-            model_params = {
-                'purchase_price': project.purchase_price or 0,
-                'acquisition_costs': project.acquisition_costs or 0,
-                'construction_cost': project.construction_cost or 0,
-                'construction_duration_months': project.construction_duration_months or 12,
-                'contingency_percentage': project.contingency_percentage or 10.0,
-                'equity_percentage': project.equity_percentage or 30.0,
-                'debt_percentage': project.debt_percentage or 70.0,
-                'interest_rate': project.interest_rate or 6.0,
-                'loan_term_years': project.loan_term_years or 25,
-                'estimated_monthly_rent': project.estimated_monthly_rent or 0,
-                'rent_growth_rate': project.rent_growth_rate or 3.0,
-                'occupancy_rate': project.occupancy_rate or 95.0,
-                'operating_expense_ratio': project.operating_expense_ratio or 30.0,
-                'holding_period_years': project.holding_period_years or 10,
-                'exit_cap_rate': project.exit_cap_rate or 6.5
-            }
+
+            st.markdown("### 🧾 Assumptions")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                monthly_rent = st.number_input(
+                    "Monthly Rent (AUD)",
+                    min_value=0.0,
+                    value=float(project.estimated_monthly_rent or 0),
+                    step=5000.0,
+                    key="scenario_monthly_rent",
+                )
+                occupancy = st.number_input(
+                    "Occupancy Rate (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(project.occupancy_rate or 95.0),
+                    step=1.0,
+                    key="scenario_occupancy",
+                )
+            with col2:
+                rent_growth = st.number_input(
+                    "Rent Growth (%)",
+                    min_value=0.0,
+                    max_value=20.0,
+                    value=float(project.rent_growth_rate or 3.0),
+                    step=0.5,
+                    key="scenario_rent_growth",
+                )
+                opex_ratio = st.number_input(
+                    "Opex Ratio (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(project.operating_expense_ratio or 30.0),
+                    step=5.0,
+                    key="scenario_opex",
+                )
+            with col3:
+                holding_period = st.number_input(
+                    "Holding Period (years)",
+                    min_value=1,
+                    max_value=30,
+                    value=int(project.holding_period_years or 10),
+                    step=1,
+                    key="scenario_holding",
+                )
+                exit_cap_rate = st.number_input(
+                    "Exit Cap Rate (%)",
+                    min_value=0.0,
+                    max_value=20.0,
+                    value=float(project.exit_cap_rate or 6.5),
+                    step=0.25,
+                    key="scenario_exit_cap",
+                )
+
+            model_params = build_financial_model_params(project, cost_data, financing_data)
+            model_params.update(
+                {
+                    "estimated_monthly_rent": monthly_rent,
+                    "rent_growth_rate": rent_growth,
+                    "occupancy_rate": occupancy,
+                    "operating_expense_ratio": opex_ratio,
+                    "holding_period_years": holding_period,
+                    "exit_cap_rate": exit_cap_rate,
+                }
+            )
             
             try:
                 model = FinancialModel(model_params)
@@ -1786,36 +1951,80 @@ if st.session_state.selected_dd_project:
         st.markdown('<div class="bento-card" style="margin: 1rem 0;">', unsafe_allow_html=True)
         st.subheader("📄 Investment Decision Report")
         
-        # 检查参数
-        required_params = ['purchase_price', 'construction_cost', 'estimated_monthly_rent']
-        missing_params = [p for p in required_params if not project.__dict__.get(p)]
-        
-        if missing_params:
+        cost_data = DDSessionStateManager.get_cost_data()
+        financing_data = DDSessionStateManager.get_financing_data()
+        if not DDSessionStateManager.is_ready_for_financial_model():
             st.warning(
-                "⚠️ Please fill in required parameters in the Cost Breakdown or Loan Calculator tabs to generate report"
+                "⚠️ Please complete the Cost Breakdown tab first to generate report"
             )
         else:
             from utils.financial_model import FinancialModel, format_currency, format_percentage
             from utils.dd_report_generator import DDReportGenerator
-            
-            # 准备参数
-            model_params = {
-                'purchase_price': project.purchase_price or 0,
-                'acquisition_costs': project.acquisition_costs or 0,
-                'construction_cost': project.construction_cost or 0,
-                'construction_duration_months': project.construction_duration_months or 12,
-                'contingency_percentage': project.contingency_percentage or 10.0,
-                'equity_percentage': project.equity_percentage or 30.0,
-                'debt_percentage': project.debt_percentage or 70.0,
-                'interest_rate': project.interest_rate or 6.0,
-                'loan_term_years': project.loan_term_years or 25,
-                'estimated_monthly_rent': project.estimated_monthly_rent or 0,
-                'rent_growth_rate': project.rent_growth_rate or 3.0,
-                'occupancy_rate': project.occupancy_rate or 95.0,
-                'operating_expense_ratio': project.operating_expense_ratio or 30.0,
-                'holding_period_years': project.holding_period_years or 10,
-                'exit_cap_rate': project.exit_cap_rate or 6.5
-            }
+
+            st.markdown("### 🧾 Report Assumptions")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                monthly_rent = st.number_input(
+                    "Monthly Rent (AUD)",
+                    min_value=0.0,
+                    value=float(project.estimated_monthly_rent or 0),
+                    step=5000.0,
+                    key="report_monthly_rent",
+                )
+                occupancy = st.number_input(
+                    "Occupancy Rate (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(project.occupancy_rate or 95.0),
+                    step=1.0,
+                    key="report_occupancy",
+                )
+            with col2:
+                rent_growth = st.number_input(
+                    "Rent Growth (%)",
+                    min_value=0.0,
+                    max_value=20.0,
+                    value=float(project.rent_growth_rate or 3.0),
+                    step=0.5,
+                    key="report_rent_growth",
+                )
+                opex_ratio = st.number_input(
+                    "Opex Ratio (%)",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(project.operating_expense_ratio or 30.0),
+                    step=5.0,
+                    key="report_opex",
+                )
+            with col3:
+                holding_period = st.number_input(
+                    "Holding Period (years)",
+                    min_value=1,
+                    max_value=30,
+                    value=int(project.holding_period_years or 10),
+                    step=1,
+                    key="report_holding",
+                )
+                exit_cap_rate = st.number_input(
+                    "Exit Cap Rate (%)",
+                    min_value=0.0,
+                    max_value=20.0,
+                    value=float(project.exit_cap_rate or 6.5),
+                    step=0.25,
+                    key="report_exit_cap",
+                )
+
+            model_params = build_financial_model_params(project, cost_data, financing_data)
+            model_params.update(
+                {
+                    "estimated_monthly_rent": monthly_rent,
+                    "rent_growth_rate": rent_growth,
+                    "occupancy_rate": occupancy,
+                    "operating_expense_ratio": opex_ratio,
+                    "holding_period_years": holding_period,
+                    "exit_cap_rate": exit_cap_rate,
+                }
+            )
             
             try:
                 # 计算财务模型
