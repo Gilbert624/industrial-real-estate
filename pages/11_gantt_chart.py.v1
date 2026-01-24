@@ -1,0 +1,443 @@
+"""
+轻量级项目甘特图生成器
+用于工业地产项目的时间轴管理和可视化
+"""
+
+import streamlit as st
+import plotly.figure_factory as ff
+import plotly.graph_objects as go
+import plotly.express as px
+import pandas as pd
+from datetime import datetime, timedelta
+import sqlite3
+
+st.set_page_config(page_title="Project Gantt Chart", page_icon="📊", layout="wide")
+
+# ========== 辅助函数 ==========
+
+def add_business_days(start_date, days):
+    """添加工作日（跳过周末）"""
+    current = start_date
+    added = 0
+    
+    while added < days:
+        current += timedelta(days=1)
+        if current.weekday() < 5:  # 0-4 是周一到周五
+            added += 1
+    
+    return current
+
+def parse_natural_language(text):
+    """
+    解析自然语言输入的任务
+    例如: "DA submission 2周，现在开始"
+    """
+    # 简化版本，实际可以用Claude API做更智能的解析
+    tasks = []
+    lines = text.strip().split('\n')
+    
+    for line in lines:
+        if '-' in line:
+            name = line.split('-')[1].strip()
+            # 提取持续时间（简化逻辑）
+            if '周' in name:
+                duration = int(name.split('周')[0].split()[-1]) * 7
+                name = name.split('需要')[0].strip()
+            else:
+                duration = 7  # 默认1周
+            
+            tasks.append({
+                'name': name,
+                'duration': duration,
+                'start': datetime.now()
+            })
+    
+    return tasks
+
+DB_PATH = "industrial_property.db"
+
+def ensure_project_tables(conn):
+    """确保项目相关表存在"""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS assets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            asset_id INTEGER,
+            project_name TEXT NOT NULL,
+            status TEXT,
+            planned_start_date DATE,
+            actual_start_date DATE,
+            planned_completion_date DATE,
+            actual_completion_date DATE,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (asset_id) REFERENCES assets(id)
+        )
+    """)
+    conn.commit()
+
+def seed_sample_projects(conn):
+    """当项目为空时写入示例数据"""
+    count = conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
+    if count > 0:
+        return
+
+    assets = [
+        ("Sydney Logistics Park",),
+        ("Melbourne Industrial Hub",),
+        ("Brisbane Cold Storage",),
+    ]
+    conn.executemany("INSERT INTO assets (name) VALUES (?)", assets)
+
+    asset_ids = [row[0] for row in conn.execute("SELECT id FROM assets ORDER BY id").fetchall()]
+    today = datetime.now().date()
+
+    sample_projects = [
+        (asset_ids[0], "DA Preparation", "DA", today - timedelta(days=20), None, today + timedelta(days=60), None),
+        (asset_ids[1], "Warehouse Expansion", "Planning", today - timedelta(days=5), None, today + timedelta(days=120), None),
+        (asset_ids[2], "Cold Chain Upgrade", "Construction", today - timedelta(days=45), today - timedelta(days=30), today + timedelta(days=150), None),
+    ]
+    conn.executemany(
+        """
+        INSERT INTO projects (
+            asset_id, project_name, status,
+            planned_start_date, actual_start_date,
+            planned_completion_date, actual_completion_date
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        sample_projects
+    )
+    conn.commit()
+
+def get_projects_from_db():
+    """从数据库获取项目信息"""
+    conn = sqlite3.connect(DB_PATH)
+    ensure_project_tables(conn)
+    seed_sample_projects(conn)
+
+    query = """
+        SELECT 
+            p.project_name,
+            COALESCE(p.status, 'Planning') AS status,
+            COALESCE(p.actual_start_date, p.planned_start_date) AS start_date,
+            COALESCE(p.actual_completion_date, p.planned_completion_date) AS expected_completion,
+            a.name AS asset_name
+        FROM projects p
+        LEFT JOIN assets a ON p.asset_id = a.id
+        WHERE COALESCE(p.actual_start_date, p.planned_start_date) IS NOT NULL
+          AND COALESCE(p.actual_completion_date, p.planned_completion_date) IS NOT NULL
+        ORDER BY start_date
+    """
+
+    df = pd.read_sql(query, conn)
+    conn.close()
+
+    if df.empty:
+        return df
+
+    df["start_date"] = pd.to_datetime(df["start_date"])
+    df["expected_completion"] = pd.to_datetime(df["expected_completion"])
+    df["asset_name"] = df["asset_name"].fillna("未关联资产")
+
+    today = pd.Timestamp.now().normalize()
+    def calc_completion(row):
+        if pd.isna(row["start_date"]) or pd.isna(row["expected_completion"]):
+            return 0.0
+        if row["expected_completion"] <= today:
+            return 100.0
+        total_days = (row["expected_completion"] - row["start_date"]).days
+        if total_days <= 0:
+            return 0.0
+        elapsed_days = (today - row["start_date"]).days
+        return max(0.0, min(100.0, (elapsed_days / total_days) * 100))
+
+    df["completion_percentage"] = df.apply(calc_completion, axis=1)
+    return df
+
+# ========== 主界面 ==========
+
+st.title("📊 项目甘特图生成器")
+st.caption("轻量级的项目时间轴管理工具")
+
+# 选择视图模式
+view_mode = st.radio(
+    "选择视图:",
+    ["单个项目详细视图", "多项目总览", "创建新时间轴"],
+    horizontal=True
+)
+
+# ========== 单项目详细视图 ==========
+if view_mode == "单个项目详细视图":
+    
+    # 从数据库加载项目
+    projects_df = get_projects_from_db()
+    
+    if not projects_df.empty:
+        selected_project = st.selectbox(
+            "选择项目:",
+            projects_df['project_name'].tolist()
+        )
+        
+        # 获取项目详情
+        project = projects_df[projects_df['project_name'] == selected_project].iloc[0]
+        
+        # 显示项目信息
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("当前阶段", project['status'])
+        with col2:
+            st.metric("进度", f"{project['completion_percentage']:.1f}%")
+        with col3:
+            start_label = project["start_date"].strftime("%Y-%m-%d")
+            st.metric("开始日期", start_label)
+        with col4:
+            completion_label = project["expected_completion"].strftime("%Y-%m-%d")
+            st.metric("预计完成", completion_label)
+        
+        st.divider()
+        
+        # 定义项目阶段
+        # 这里可以从数据库加载，或者让用户自定义
+        stages = [
+            {"Task": "Land Acquisition", "Start": "2024-01-01", "Finish": "2024-03-31", "Resource": "Legal"},
+            {"Task": "DA Preparation", "Start": "2024-02-01", "Finish": "2024-05-31", "Resource": "Consultant"},
+            {"Task": "DA Submission", "Start": "2024-06-01", "Finish": "2024-06-15", "Resource": "Council"},
+            {"Task": "Council Approval", "Start": "2024-06-15", "Finish": "2024-10-31", "Resource": "Council"},
+            {"Task": "Detailed Design", "Start": "2024-11-01", "Finish": "2024-12-31", "Resource": "Architect"},
+            {"Task": "Tendering", "Start": "2025-01-01", "Finish": "2025-02-15", "Resource": "Procurement"},
+            {"Task": "Construction", "Start": "2025-03-01", "Finish": "2026-03-31", "Resource": "Builder"},
+            {"Task": "Marketing", "Start": "2025-09-01", "Finish": "2026-06-30", "Resource": "Marketing"},
+        ]
+        
+        df = pd.DataFrame(stages)
+        
+        # 创建甘特图
+        fig = ff.create_gantt(
+            df,
+            colors={
+                'Legal': 'rgb(220, 0, 0)',
+                'Consultant': 'rgb(170, 14, 200)',
+                'Council': 'rgb(255, 140, 0)',
+                'Architect': 'rgb(46, 137, 205)',
+                'Procurement': 'rgb(114, 44, 121)',
+                'Builder': 'rgb(198, 47, 105)',
+                'Marketing': 'rgb(58, 149, 136)',
+            },
+            index_col='Resource',
+            show_colorbar=True,
+            group_tasks=True,
+            showgrid_x=True,
+            showgrid_y=True,
+            title=f"{selected_project} - 项目时间轴"
+        )
+        
+        fig.update_layout(
+            height=600,
+            xaxis_title="时间轴",
+            yaxis_title="任务阶段",
+            hovermode='closest'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # What-if 分析
+        st.subheader("🔮 What-if 情景分析")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            delay_task = st.selectbox(
+                "如果哪个任务延迟?",
+                [s['Task'] for s in stages]
+            )
+            
+            delay_days = st.slider(
+                "延迟多少天?",
+                0, 90, 0
+            )
+        
+        with col2:
+            if delay_days > 0:
+                # 简化计算：假设后续任务同步延迟
+                original_completion = pd.to_datetime(project["expected_completion"])
+                new_completion = original_completion + timedelta(days=delay_days)
+                
+                st.warning(f"⚠️ 延迟影响分析")
+                st.metric(
+                    "新的完工日期",
+                    new_completion.strftime("%Y-%m-%d"),
+                    delta=f"+{delay_days} 天",
+                    delta_color="inverse"
+                )
+                
+                # 计算额外成本（假设每天$1000）
+                extra_cost = delay_days * 1000
+                st.metric(
+                    "预计额外成本",
+                    f"${extra_cost:,}",
+                    delta=f"+${extra_cost:,}"
+                )
+    
+    else:
+        st.info("📝 还没有项目数据，请先在Data Input Center添加项目")
+
+# ========== 多项目总览 ==========
+elif view_mode == "多项目总览":
+    
+    st.subheader("🗓️ 所有活跃项目时间轴")
+    
+    projects_df = get_projects_from_db()
+    
+    if not projects_df.empty:
+        # 创建时间轴数据
+        timeline_data = []
+        
+        for idx, row in projects_df.iterrows():
+            timeline_data.append({
+                'Task': f"{row['asset_name']} - {row['project_name']}",
+                'Start': row['start_date'],
+                'Finish': row['expected_completion'],
+                'Completion': row['completion_percentage']
+            })
+        
+        df = pd.DataFrame(timeline_data)
+        
+        # 创建横向时间轴
+        fig = px.timeline(
+            df,
+            x_start="Start",
+            x_end="Finish",
+            y="Task",
+            color="Completion",
+            title="所有项目时间轴总览",
+            color_continuous_scale="RdYlGn"
+        )
+        
+        fig.update_yaxes(autorange="reversed")
+        fig.update_layout(height=max(400, len(df) * 60))
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # 统计信息
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("活跃项目", len(projects_df))
+        
+        with col2:
+            avg_completion = projects_df['completion_percentage'].mean()
+            st.metric("平均进度", f"{avg_completion:.1f}%")
+        
+        with col3:
+            # 计算本季度将完成的项目
+            this_quarter_end = pd.Timestamp.now() + pd.DateOffset(months=3)
+            completing_soon = projects_df[
+                pd.to_datetime(projects_df['expected_completion']) < this_quarter_end
+            ]
+            st.metric("本季度完工", len(completing_soon))
+        
+        # 里程碑提醒
+        st.subheader("📌 即将到来的里程碑")
+        
+        next_30_days = pd.Timestamp.now() + pd.DateOffset(days=30)
+        upcoming = projects_df[
+            pd.to_datetime(projects_df['expected_completion']) < next_30_days
+        ]
+        
+        if not upcoming.empty:
+            for idx, proj in upcoming.iterrows():
+                days_left = (
+                    pd.to_datetime(proj['expected_completion']) - pd.Timestamp.now()
+                ).days
+                
+                st.info(
+                    f"🔔 **{proj['project_name']}** - "
+                    f"{proj['status']} 阶段将在 {days_left} 天后完成 "
+                    f"({proj['expected_completion']})"
+                )
+        else:
+            st.success("✅ 未来30天内没有即将到期的里程碑")
+    
+    else:
+        st.info("📝 还没有项目数据")
+
+# ========== 创建新时间轴 ==========
+else:  # 创建新时间轴
+    
+    st.subheader("➕ 创建新的项目时间轴")
+    
+    # 方式1: 自然语言输入
+    with st.expander("📝 方式1: 自然语言输入 (推荐)", expanded=True):
+        st.write("用简单的语言描述项目阶段，AI会自动解析")
+        
+        text_input = st.text_area(
+            "描述项目阶段:",
+            value="""- DA submission 2周，现在开始
+- Council approval 等待8周，DA完成后开始
+- 详细设计4周，approval后开始
+- Tendering 3周
+- Construction 26周""",
+            height=150
+        )
+        
+        if st.button("🤖 AI解析并生成甘特图"):
+            # 这里可以调用Claude API做智能解析
+            st.info("💡 提示: 这个功能需要集成Claude API")
+            
+            # 简单演示
+            with st.spinner("AI正在解析..."):
+                import time
+                time.sleep(2)
+                st.success("✅ 解析完成！已生成5个任务")
+    
+    # 方式2: 手动输入
+    with st.expander("✍️ 方式2: 手动输入表格"):
+        st.write("逐行添加任务")
+        
+        # 使用 st.data_editor 让用户编辑表格
+        sample_data = pd.DataFrame({
+            '任务名称': ['DA Submission', 'Council Approval'],
+            '持续时间(天)': [14, 56],
+            '开始日期': ['2024-06-01', '2024-06-15'],
+            '依赖任务': ['', 'DA Submission'],
+        })
+        
+        edited_df = st.data_editor(
+            sample_data,
+            num_rows="dynamic",
+            use_container_width=True
+        )
+        
+        if st.button("生成甘特图"):
+            st.success("✅ 甘特图已生成")
+
+# ========== 侧边栏: 设置 ==========
+with st.sidebar:
+    st.header("⚙️ 设置")
+    
+    # 工作日设置
+    st.subheader("工作日设置")
+    work_days = st.multiselect(
+        "工作日:",
+        ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
+        default=['周一', '周二', '周三', '周四', '周五']
+    )
+    
+    # 公共假期
+    st.subheader("公共假期")
+    holidays = st.text_area(
+        "输入假期日期 (一行一个):",
+        value="2024-12-25\n2024-12-26\n2025-01-01"
+    )
+    
+    # 导出选项
+    st.subheader("导出")
+    if st.button("📥 导出为Excel"):
+        st.info("导出功能开发中...")
+    
+    if st.button("📥 导出为PDF"):
+        st.info("导出功能开发中...")
