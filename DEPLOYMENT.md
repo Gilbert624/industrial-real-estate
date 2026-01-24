@@ -18,12 +18,17 @@ git push -u origin main
 
 - ✅ `requirements.txt` - 所有依赖
 - ✅ `app.py` - 主应用入口
+- ✅ `pages/2_data_input.py` - 统一数据输入中心
+- ✅ `pages/3_assets_view.py` - Assets 只读视图
+- ✅ `pages/4_projects_view.py` - Projects 只读视图
+- ✅ `pages/5_finance_view.py` - Finance 只读视图
+- ✅ `pages/6_consultants_view.py` - Consultants 只读视图
 - ✅ `.streamlit/config.toml` - 配置文件
 - ✅ `.gitignore` - 忽略敏感文件
 
 ### 3. 创建secrets配置
 
-创建 `.streamlit/secrets.toml`（本地测试用，不提交到Git）：
+创建 `.streamlit/secrets.toml`（本地测试用，不提交到 Git）：
 ```toml
 # API Keys
 ANTHROPIC_API_KEY = "your_api_key_here"
@@ -37,6 +42,10 @@ path = "production_data.db"
 [app]
 env = "production"
 debug = false
+
+# Optional env values (local only; Streamlit Cloud uses Settings → Secrets/Environment)
+DATABASE_PATH = "industrial_property.db"
+LOG_LEVEL = "INFO"
 ```
 
 ## 部署步骤
@@ -55,7 +64,7 @@ debug = false
 4. 选择主文件（app.py）
 5. 点击 "Deploy"
 
-### Step 3: 配置Secrets
+### Step 3: 配置 Secrets
 
 在Streamlit Cloud控制台：
 
@@ -72,6 +81,10 @@ path = "production_data.db"
 [app]
 env = "production"
 debug = false
+
+# Optional: 环境变量（建议通过 Streamlit Cloud → Settings → Environment Variables 配置）
+DATABASE_PATH = "industrial_property.db"
+LOG_LEVEL = "INFO"
 ```
 
 4. 保存
@@ -122,6 +135,12 @@ python verify_api_key.py
 ```
 https://your-app-name.streamlit.app
 ```
+
+## Read-only Dashboard 说明
+
+- 数据录入统一在 `Data Input Center` 页面完成。
+- 资产、项目、财务、顾问页面为只读视图。
+- Streamlit Cloud 中请通过 Settings → Environment Variables 配置 `DATABASE_PATH` 与 `LOG_LEVEL`（`.env` 不会在云端生效）。
 
 ## 性能优化
 

@@ -12,7 +12,8 @@ import pandas as pd
 import os
 import sys
 from datetime import datetime, timedelta
-from sqlalchemy import func
+from pathlib import Path
+from sqlalchemy import func, inspect, text
 
 # Theme imports
 from config.theme import generate_css, LIGHT_THEME, DARK_THEME
@@ -258,6 +259,29 @@ def get_portfolio_trend(_session, months=6):
     except Exception as e:
         st.error(f"Error calculating trend: {e}")
         return [], []
+
+
+def detect_legacy_schema(engine) -> bool:
+    inspector = inspect(engine)
+    tables = inspector.get_table_names()
+    if "assets" not in tables or "projects" not in tables or "transactions" not in tables:
+        return True
+    project_cols = [col["name"] for col in inspector.get_columns("projects")]
+    transaction_cols = [col["name"] for col in inspector.get_columns("transactions")]
+    if "asset_id" not in project_cols or "asset_id" not in transaction_cols:
+        return True
+    return False
+
+
+def get_table_counts(engine) -> dict:
+    counts = {}
+    with engine.begin() as conn:
+        for table in ["assets", "projects", "transactions"]:
+            try:
+                counts[table] = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() or 0
+            except Exception:
+                counts[table] = 0
+    return counts
 
 
 def display_metrics(metrics):
@@ -510,6 +534,39 @@ Tables: {len(Base.metadata.tables)}""")
         return
     
     st.markdown("---")
+
+    # ========== Migration Wizard ==========
+    if detect_legacy_schema(db.engine):
+        with st.expander("首次运行向导 · 数据库迁移", expanded=True):
+            st.warning("检测到旧版本数据库结构，需要迁移到新结构。")
+            st.write("建议先备份数据库，迁移完成后会显示摘要报告。")
+
+            if st.button("一键迁移", type="primary", width="stretch"):
+                before_counts = get_table_counts(db.engine)
+                try:
+                    db.engine.dispose()
+                    from database.migrate_v1_to_v2 import migrate_database
+
+                    result_path = migrate_database(Path(db.db_path), None, True)
+                    new_db = DatabaseManager(f"sqlite:///{result_path}")
+                    after_counts = get_table_counts(new_db.engine)
+
+                    st.success("迁移完成")
+                    st.write("迁移摘要:")
+                    st.dataframe(
+                        pd.DataFrame(
+                            {
+                                "table": list(before_counts.keys()),
+                                "before": list(before_counts.values()),
+                                "after": [after_counts.get(k, 0) for k in before_counts.keys()],
+                            }
+                        ),
+                        width="stretch",
+                        hide_index=True,
+                    )
+                    st.info("请刷新页面以加载新结构。")
+                except Exception as e:
+                    st.error(f"迁移失败: {e}")
     
     # ========== 强制刷新数据（解决缓存问题）==========
     
@@ -537,6 +594,56 @@ Tables: {len(Base.metadata.tables)}""")
             
             # 获取活跃项目数
             active_projects = fresh_db.get_active_projects_count(session)
+
+            # 活跃资产数量（排除已出售/处置）
+            active_assets = session.query(func.count(Asset.id)).filter(
+                Asset.status.notin_([AssetStatus.SOLD, AssetStatus.DISPOSED])
+            ).scalar() or 0
+
+            # 项目数量/资产
+            total_projects = session.query(func.count(Project.id)).scalar() or 0
+            project_counts = session.query(Project.asset_id, func.count(Project.id)).group_by(Project.asset_id).all()
+            max_projects = max([count for _, count in project_counts], default=0)
+            avg_projects = (total_projects / total_assets) if total_assets else 0
+
+            # 顾问数量 by category
+            consultants_total = 0
+            top_category_label = "N/A"
+            try:
+                result = session.execute(
+                    text(
+                        """
+                        SELECT category, COUNT(*) AS cnt
+                        FROM consultants
+                        WHERE is_active = 1
+                        GROUP BY category
+                        ORDER BY cnt DESC
+                        """
+                    )
+                ).mappings()
+                rows = list(result)
+                consultants_total = sum(row["cnt"] for row in rows)
+                if rows:
+                    top_category_label = f"{rows[0]['category'] or 'Other'} ({rows[0]['cnt']})"
+            except Exception:
+                consultants_total = 0
+                top_category_label = "N/A"
+
+            # 本月总支出（月度费用表）
+            monthly_expense = 0
+            try:
+                monthly_expense = session.execute(
+                    text(
+                        """
+                        SELECT COALESCE(SUM(amount), 0)
+                        FROM monthly_expenses
+                        WHERE expense_year = :year AND expense_month = :month
+                        """
+                    ),
+                    {"year": datetime.now().year, "month": datetime.now().month},
+                ).scalar() or 0
+            except Exception:
+                monthly_expense = 0
             
             # 获取现金余额
             cash_balance = fresh_db.get_cash_balance()
@@ -570,6 +677,30 @@ Tables: {len(Base.metadata.tables)}""")
                     label=t('home.cash_balance'),
                     value=f"${cash_balance/1_000_000:.1f}M AUD" if abs(cash_balance) > 1_000_000 else f"${cash_balance:,.0f} AUD",
                     delta=None
+                )
+
+            col5, col6, col7, col8 = st.columns(4)
+            with col5:
+                st.metric(
+                    label="Active Assets",
+                    value=active_assets,
+                )
+            with col6:
+                st.metric(
+                    label="Projects per Asset",
+                    value=f"{avg_projects:.1f}",
+                    delta=f"max {max_projects}" if max_projects else None,
+                )
+            with col7:
+                st.metric(
+                    label="Consultants by Category",
+                    value=consultants_total,
+                    delta=f"Top: {top_category_label}" if consultants_total else None,
+                )
+            with col8:
+                st.metric(
+                    label="This Month Expenses",
+                    value=f"${monthly_expense:,.0f} AUD",
                 )
         finally:
             session.close()
